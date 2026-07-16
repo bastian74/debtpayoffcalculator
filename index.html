@@ -607,7 +607,8 @@ function monthly401k() {
 function monthlyMatch() {
   if (!S.k401.on) return 0;
   const c = monthly401k();
-  return Math.min(c * (S.k401.matchPct / 100), monthlyGross() * (S.k401.matchCap / 100));
+  // employer matches matchPct% of contributions, up to matchCap% of gross salary
+  return Math.min(c, monthlyGross() * (S.k401.matchCap / 100)) * (S.k401.matchPct / 100);
 }
 
 // ============================================================
@@ -745,7 +746,7 @@ function simConsolidated(totalBal, aprPct, monthlyPay, termMonths) {
 function calculate() {
   const net = monthlyNet(), gross = monthlyGross(), m401 = monthly401k(), mMatch = monthlyMatch();
   const totalDebt = S.debts.reduce((s, d) => s + d.balance, 0);
-  const totalMin = S.debts.reduce((s, d) => s + d.minPay, 0);
+  const totalMin = S.debts.reduce((s, d) => s + (d.balance > 0 ? d.minPay : 0), 0);
   const cashExp = S.expenses.filter(e => !e.paidWith || e.paidWith === 'cash').reduce((s, e) => s + e.amount, 0);
   const cardExp = S.expenses.filter(e => e.paidWith && e.paidWith !== 'cash').reduce((s, e) => s + e.amount, 0);
   const totalExp = cashExp + cardExp;
@@ -755,7 +756,7 @@ function calculate() {
   const freeCash = budget - totalMin - S.extra;     // left over after the whole plan
   const minShort = Math.max(0, totalMin - budget);  // can't even cover minimums
 
-  const trueCost = sim.allPaid && totalDebt > 0 ? 1 + sim.totalInterest / totalDebt : Infinity;
+  const trueCost = totalDebt > 0 ? (sim.allPaid ? 1 + sim.totalInterest / totalDebt : Infinity) : 1;
   const dti = net > 0 ? totalMin / net * 100 : 0;
 
   // Per-debt: monthly charges routed to it, and negative-amortization check
@@ -1002,7 +1003,7 @@ function renderBudget() {
   const el = $('budgetBreakdown');
   if (C.net <= 0) { el.innerHTML = '<div class="empty"><div class="empty-ico">📭</div>Add income to see your budget.</div>'; return; }
   const housingExp = S.expenses.filter(e => e.cat === 'housing').reduce((s, e) => s + e.amount, 0);
-  const mortMin = S.debts.filter(d => d.type === 'mortgage').reduce((s, d) => s + d.minPay, 0);
+  const mortMin = S.debts.filter(d => d.type === 'mortgage' && d.balance > 0).reduce((s, d) => s + d.minPay, 0);
   const rows = [
     { label: 'Housing', amount: housingExp + mortMin, color: '#a29bfe' },
     { label: 'Living expenses', amount: C.totalExp - housingExp, color: '#e55d5d' },
@@ -1383,7 +1384,7 @@ function renderAdvisor() {
 
   // ── 401k vs debt ─────────────────────────────────────────
   const highAPR = Math.max(...S.debts.filter(d => d.balance > 0).map(d => d.apr), 0);
-  const ret = S.k401.returnPct || 7;
+  const ret = (typeof S.k401.returnPct === 'number') ? S.k401.returnPct : 7;
   html += '<div class="card"><div class="card-title">🏦 401(k) vs. Debt</div>';
   if (S.k401.on && C.mMatch > 0) html += abox('ag', '✅ Keep capturing the employer match', 'var(--green)', 'Your match is worth <strong>' + money(C.mMatch * 12) + '/yr</strong> — an instant 50–100% return. Never give this up to pay debt faster.');
   if (highAPR > ret * 1.3) {
@@ -1783,14 +1784,14 @@ function wire() {
   $('freqPills').addEventListener('click', e => { const p = e.target.closest('.pill'); if (!p) return; S.payFreq = p.dataset.val; save(); refresh(); });
   $('modePills').addEventListener('click', e => { const p = e.target.closest('.pill'); if (!p) return; S.incomeMode = p.dataset.val; save(); refresh(); });
   $('incomeAmt').addEventListener('input', () => { S.incomeAmt = num('incomeAmt'); save(); refresh(); });
-  $('taxPct').addEventListener('input', () => { S.taxPct = num('taxPct') || 22; save(); refresh(); });
+  $('taxPct').addEventListener('input', () => { S.taxPct = $('taxPct').value === '' ? 22 : num('taxPct'); save(); refresh(); });
   $('grossAnnual').addEventListener('input', () => { S.grossAnnual = num('grossAnnual'); save(); refresh(); });
   $('k401TogRow').addEventListener('click', () => { S.k401.on = !S.k401.on; save(); refresh(); });
   $('k401Type').addEventListener('change', () => { S.k401.type = $('k401Type').value; save(); refresh(); });
   $('k401Amt').addEventListener('input', () => { S.k401.amt = num('k401Amt'); save(); refresh(); });
   $('k401Match').addEventListener('input', () => { S.k401.matchPct = num('k401Match'); save(); refresh(); });
   $('k401Cap').addEventListener('input', () => { S.k401.matchCap = num('k401Cap'); save(); refresh(); });
-  $('k401Return').addEventListener('input', () => { S.k401.returnPct = num('k401Return') || 7; save(); refresh(); });
+  $('k401Return').addEventListener('input', () => { S.k401.returnPct = $('k401Return').value === '' ? 7 : num('k401Return'); save(); refresh(); });
   $('savBalance').addEventListener('input', () => { S.savings.balance = num('savBalance'); save(); refresh(); });
   $('savMonthly').addEventListener('input', () => { S.savings.monthly = num('savMonthly'); save(); refresh(); });
   $('efMonths').addEventListener('input', () => { S.savings.efMonths = num('efMonths') || 3; save(); refresh(); });
