@@ -1,0 +1,300 @@
+// ============================================================
+// DebtPayoffCalculator math-engine tests
+// Engine-agnostic: expects the app's inline script to already be
+// evaluated in the same scope (S, simulate, simConsolidated,
+// migrateOld, normalize, defaultState, MAX_MONTHS available).
+// Collects results into global __TEST_RESULTS (array of {name,pass,msg}).
+// Run via tests/run-tests.ps1 (headless Edge) or node (see runner).
+// ============================================================
+var __TEST_RESULTS = [];
+(function () {
+  'use strict';
+  function t(name, fn) {
+    try { fn(); __TEST_RESULTS.push({ name: name, pass: true, msg: '' }); }
+    catch (e) { __TEST_RESULTS.push({ name: name, pass: false, msg: String(e && e.message || e) }); }
+  }
+  function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
+  function close(a, b, eps, msg) { if (Math.abs(a - b) > eps) throw new Error((msg || 'not close') + ': ' + a + ' vs ' + b); }
+
+  // Reset global state to a clean baseline for each test
+  function base() {
+    S = defaultState();
+    S.incomeMode = 'takehome';
+    S.payFreq = 'monthly';
+    S.incomeAmt = 10000;          // $10k/mo take-home: plenty of budget
+    S.savings = { balance: 0, monthly: 0, efMonths: 3 };
+    S.expenses = [];
+    S.extra = 0;
+    S.strategy = 'avalanche';
+    return S;
+  }
+  function debt(o) {
+    return Object.assign({ id: 'd' + Math.random().toString(36).slice(2, 8), name: 'D', type: 'credit', balance: 0, apr: 0, minPay: 0, color: '#ff6b6b', rateChanges: [] }, o);
+  }
+
+  // Independent reference amortization: month = interest accrual then payment
+  function refAmort(balance, aprPct, pay) {
+    var r = aprPct / 100 / 12, bal = balance, interest = 0, m = 0;
+    while (bal > 0.005 && m < 2000) {
+      var i = bal * r; interest += i; bal += i;
+      bal -= Math.min(bal, pay); m++;
+    }
+    return { months: m, interest: interest };
+  }
+
+  // ---- T1: single-debt amortization matches independent reference ----
+  t('T1 amortization 10000 @12% min 300', function () {
+    base();
+    S.debts = [debt({ balance: 10000, apr: 12, minPay: 300 })];
+    var sim = simulate();
+    var ref = refAmort(10000, 12, 300);
+    assert(sim.allPaid, 'should pay off');
+    close(sim.allPaidMonth, ref.months, 0, 'payoff month');
+    close(sim.totalInterest, ref.interest, 0.01, 'total interest');
+  });
+
+  // ---- T2: zero-APR exact ----
+  t('T2 zero APR 1000 min 100 -> 10 months, $0 interest', function () {
+    base();
+    S.debts = [debt({ balance: 1000, apr: 0, minPay: 100 })];
+    var sim = simulate();
+    assert(sim.allPaid, 'paid');
+    assert(sim.allPaidMonth === 10, 'expected month 10, got ' + sim.allPaidMonth);
+    assert(sim.totalInterest === 0, 'interest must be exactly 0, got ' + sim.totalInterest);
+  });
+
+  // ---- T3: minimum larger than balance ----
+  t('T3 min > balance pays off first month', function () {
+    base();
+    S.debts = [debt({ balance: 500, apr: 12, minPay: 1000 })];
+    var sim = simulate();
+    assert(sim.allPaidMonth === 1, 'month 1, got ' + sim.allPaidMonth);
+    close(sim.totalInterest, 5, 0.001, 'one month interest on 500 @1%/mo');
+  });
+
+  // ---- T4: strategy targeting ----
+  t('T4 avalanche targets highest APR / snowball targets smallest balance', function () {
+    base();
+    S.extra = 100;
+    S.debts = [
+      debt({ id: 'big-lowapr', balance: 9000, apr: 5, minPay: 200 }),
+      debt({ id: 'small-hiapr', balance: 1000, apr: 25, minPay: 50 })
+    ];
+    var av = simulate({ strategy: 'avalanche' });
+    assert(av.snaps[0].target === 'small-hiapr', 'avalanche target');
+    S.debts = [
+      debt({ id: 'small-lowapr', balance: 1000, apr: 5, minPay: 50 }),
+      debt({ id: 'big-hiapr', balance: 9000, apr: 25, minPay: 200 })
+    ];
+    var sn = simulate({ strategy: 'snowball' });
+    assert(sn.snaps[0].target === 'small-lowapr', 'snowball target');
+  });
+
+  // ---- T5: rollover of freed minimums ----
+  t('T5 freed minimum rolls into extra', function () {
+    base();
+    S.extra = 500;
+    S.debts = [
+      debt({ id: 'a', balance: 1000, apr: 0, minPay: 100 }),
+      debt({ id: 'b', balance: 20000, apr: 0, minPay: 200 })
+    ];
+    var sim = simulate();
+    var ev = sim.payoffEvents.find(function (e) { return e.id === 'a'; });
+    assert(ev, 'debt a pays off');
+    assert(ev.extraNow === 600, 'extra after rollover should be 500+100, got ' + ev.extraNow);
+    assert(sim.allPaid, 'all paid');
+  });
+
+  // ---- T6: immediate breakdown when nothing can be paid ----
+  t('T6 zero income + zero savings -> breakdown at month 0', function () {
+    base();
+    S.incomeAmt = 0;
+    S.debts = [debt({ balance: 5000, apr: 10, minPay: 100 })];
+    var sim = simulate();
+    assert(sim.breakdownMonth === 0, 'breakdown month 0, got ' + sim.breakdownMonth);
+  });
+
+  // ---- T7: savings drawdown timing ----
+  t('T7 savings absorb shortfall then plan breaks', function () {
+    base();
+    S.incomeAmt = 0;
+    S.savings.balance = 500;   // covers 50/mo shortfall for 10 months
+    S.debts = [debt({ balance: 100000, apr: 0, minPay: 50 })];
+    var sim = simulate();
+    assert(sim.breakdownMonth === 10, 'breakdown month 10, got ' + sim.breakdownMonth);
+  });
+
+  // ---- T8: pathological input terminates fast at MAX_MONTHS ----
+  t('T8 giant balance terminates at cap quickly', function () {
+    base();
+    S.debts = [debt({ balance: 1e9, apr: 24, minPay: 10 })];
+    var t0 = Date.now();
+    var sim = simulate();
+    var ms = Date.now() - t0;
+    assert(!sim.allPaid, 'not paid');
+    assert(sim.snaps.length <= MAX_MONTHS + 2, 'snaps bounded');
+    assert(ms < 2000, 'simulate too slow: ' + ms + 'ms');
+  });
+
+  // ---- T9: no negative balances ever ----
+  t('T9 snapshots never negative', function () {
+    base();
+    S.extra = 137.53;
+    S.debts = [
+      debt({ balance: 3333.33, apr: 19.99, minPay: 66.67 }),
+      debt({ balance: 12345.67, apr: 6.5, minPay: 250 })
+    ];
+    var sim = simulate();
+    sim.snaps.forEach(function (s) {
+      Object.keys(s.bal).forEach(function (k) { assert(s.bal[k] >= 0, 'negative balance month ' + s.m); });
+    });
+    assert(sim.allPaid, 'paid');
+  });
+
+  // ---- T10: consolidation math ----
+  t('T10 simConsolidated basics', function () {
+    var a = simConsolidated(10000, 0, 500, 0);
+    assert(a.paidOff && a.months === 20 && a.totalInterest === 0, '0% case: ' + JSON.stringify(a));
+    var b = simConsolidated(10000, 12, 300, 0);
+    var ref = refAmort(10000, 12, 300);
+    assert(b.paidOff, '12% paid');
+    close(b.months, ref.months, 1, 'months near ref');
+    close(b.totalInterest, ref.interest, 1, 'interest near ref');
+    var c = simConsolidated(10000, 12, 90, 0); // payment < monthly interest (100)
+    assert(c.months === null && !c.paidOff, 'payment too low detected');
+    var d = simConsolidated(10000, 12, 300, 24); // needs ~41mo, capped at 24
+    assert(!d.paidOff, 'term cap prevents payoff');
+  });
+
+  // ---- T11: df5 migration fidelity ----
+  t('T11 migrateOld maps old schema', function () {
+    var old = {
+      interval: 'biweekly', income: 2000, tax: 18, extra: 250, strategy: 'snowball',
+      has401k: true, contribType: 'percent', contribAmt: 6, matchPct: 50, matchCap: 6, returnRate: 8,
+      checkingBalance: 3000, emergencyFund: 100, otherSavings: 50, efMonths: 6,
+      debts: [
+        { id: 'x1', name: 'Card', type: 'credit', balance: 5000, apr: 22, minPayment: 100, color: '#123456', aprChanges: [{ date: '2027-01-01', apr: 28, retroactive: false }] },
+        { id: 'x2', name: 'Loan', balance: 8000, apr: 6, minPayment: 150 }
+      ],
+      expenses: [
+        { id: 'e1', cat: 'housing', name: 'Rent', amount: 1500, payAccount: 'checking' },
+        { id: 'e2', cat: 'streaming', name: 'Netflix', amount: 15, payAccount: 'x1' },
+        { id: 'e3', name: 'Mystery', amount: 20, payAccount: 'deleted-card' }
+      ]
+    };
+    var n = migrateOld(JSON.parse(JSON.stringify(old)));
+    assert(n.payFreq === 'biweekly', 'freq');
+    assert(n.incomeMode === 'gross' && n.incomeAmt === 2000 && n.taxPct === 18, 'gross mode');
+    assert(n.extra === 250 && n.strategy === 'snowball', 'plan');
+    assert(n.k401.on === true && n.k401.amt === 6 && n.k401.returnPct === 8, '401k');
+    assert(n.savings.balance === 3000 && n.savings.monthly === 150 && n.savings.efMonths === 6, 'savings');
+    assert(n.debts.length === 2 && n.debts[0].minPay === 100 && n.debts[0].rateChanges.length === 1, 'debts');
+    assert(n.debts[0].rateChanges[0].apr === 28, 'rate change apr');
+    assert(n.expenses.length === 3, 'expenses');
+    assert(n.expenses[0].paidWith === 'cash', 'checking->cash');
+    assert(n.expenses[1].paidWith === 'x1', 'card link kept');
+  });
+
+  // ---- T12: migration of 0% tax must not become 22% ----
+  t('T12 migrateOld preserves explicit 0% tax', function () {
+    var n = migrateOld({ interval: 'monthly', income: 4000, tax: 0, debts: [], expenses: [] });
+    assert(n.taxPct === 0, 'tax 0 preserved, got ' + n.taxPct);
+  });
+
+  // ---- T13: paycheck-stub migration ----
+  t('T13 migrateOld stub-deduction mode -> takehome', function () {
+    var n = migrateOld({ interval: 'weekly', income: 1000, fedTax: 120, stateTax: 40, fica: 62, medicareTax: 15, otherDeductions: 0, debts: [], expenses: [] });
+    assert(n.incomeMode === 'takehome', 'takehome mode');
+    close(n.incomeAmt, 1000 - 237, 0.001, 'net per check');
+    assert(n.grossAnnual === 52000, 'gross annual');
+  });
+
+  // ---- T14: normalize survives corrupt shapes without throwing ----
+  t('T14 normalize hardens corrupt state', function () {
+    S = Object.assign(defaultState(), { debts: 'garbage', expenses: 42, k401: null, savings: 'x' });
+    normalize();
+    assert(Array.isArray(S.debts) && S.debts.length === 0, 'debts coerced to []');
+    assert(Array.isArray(S.expenses) && S.expenses.length === 0, 'expenses coerced to []');
+    assert(S.k401 && typeof S.k401.on === 'boolean', 'k401 rebuilt');
+    assert(S.savings && typeof S.savings.balance === 'number', 'savings rebuilt');
+    var sim = simulate();
+    assert(sim.snaps.length >= 1, 'simulate runs on repaired state');
+  });
+
+  // ---- T15: normalize coerces bad field types & orphan paidWith ----
+  t('T15 normalize coerces debt/expense fields', function () {
+    base();
+    S.debts = [{ id: 1, name: 5, balance: '1000', apr: '<img src=x onerror=alert(1)>', minPay: -50, color: '"><scr' + 'ipt>x</scr' + 'ipt>', rateChanges: 'nope' }, null, 'junk'];
+    S.expenses = [{ id: 'e', name: 'Gym', amount: '40', paidWith: 'ghost-card' }, 7];
+    normalize();
+    assert(S.debts.length === 1, 'junk debts dropped, got ' + S.debts.length);
+    var d = S.debts[0];
+    assert(typeof d.name === 'string', 'name string');
+    assert(d.balance === 1000, 'balance number');
+    assert(typeof d.apr === 'number' && d.apr === 0, 'apr sanitized to number');
+    assert(d.minPay === 0, 'negative minPay clamped');
+    assert(/^#[0-9a-fA-F]{3,8}$/.test(d.color), 'color sanitized: ' + d.color);
+    assert(Array.isArray(d.rateChanges), 'rateChanges array');
+    assert(S.expenses.length === 1, 'junk expenses dropped');
+    assert(S.expenses[0].paidWith === 'cash', 'orphan paidWith -> cash');
+    assert(S.expenses[0].amount === 40, 'amount coerced');
+    var sim = simulate();
+    assert(sim.snaps.length >= 1, 'simulate runs');
+  });
+
+  // ---- T16: rate change in effect from start ----
+  t('T16 past rate change applies immediately', function () {
+    base();
+    S.debts = [debt({ balance: 1000, apr: 0, minPay: 1010, rateChanges: [{ date: '2000-01-01', apr: 12 }] })];
+    var sim = simulate();
+    close(sim.totalInterest, 10, 0.001, 'one month at 1% despite base apr 0');
+  });
+
+  // ---- T17: card charges accrue on the card and flip to cash after payoff ----
+  t('T17 expense charged to card increases balance until payoff', function () {
+    base();
+    S.debts = [debt({ id: 'cc', balance: 1000, apr: 0, minPay: 100 })];
+    S.expenses = [{ id: 'e1', cat: 'other', name: 'Sub', amount: 50, paidWith: 'cc' }];
+    var sim = simulate();
+    // effective paydown 100-50=50/mo on 1000 -> 20 months
+    assert(sim.allPaidMonth === 20, 'expected 20 months, got ' + sim.allPaidMonth);
+    assert(sim.totalInterest === 0, 'no interest at 0%');
+  });
+
+  // ---- T18: extra respects mortgage exclusion toggle ----
+  t('T18 extra skips mortgage unless enabled', function () {
+    base();
+    S.extra = 500;
+    S.debts = [
+      debt({ id: 'mort', type: 'mortgage', balance: 200000, apr: 6, minPay: 1200 }),
+      debt({ id: 'cc', type: 'credit', balance: 2000, apr: 20, minPay: 40 })
+    ];
+    var off = simulate({ extraToMortgage: false });
+    assert(off.snaps[0].target === 'cc', 'targets card when mortgage excluded');
+    S.debts = [debt({ id: 'mort', type: 'mortgage', balance: 200000, apr: 6, minPay: 1200 })];
+    var on = simulate({ extraToMortgage: true });
+    assert(on.snaps[0].target === 'mort', 'targets mortgage when enabled');
+  });
+
+  // ---- T19: money never drifts below zero / interest is finite over 50yr ----
+  t('T19 long simulation stays finite', function () {
+    base();
+    S.debts = [debt({ balance: 500000, apr: 199, minPay: 100 })]; // absurd APR, grows forever
+    var sim = simulate();
+    var last = sim.snaps[sim.snaps.length - 1];
+    assert(isFinite(sim.totalInterest) || !sim.allPaid, 'interest finite or flagged');
+    assert(isFinite(last.total), 'final total finite, got ' + last.total);
+  });
+
+  // ---- T20: import-style assign of hostile JSON must not corrupt S ----
+  t('T20 defaultState+hostile assign then normalize is usable', function () {
+    S = Object.assign(defaultState(), { incomeAmt: 'NaNny', payFreq: 'bogus', extra: -100, debts: [{ balance: 1e308, apr: 1e308, minPay: 0 }] });
+    normalize();
+    assert(typeof S.incomeAmt === 'number' && isFinite(S.incomeAmt), 'incomeAmt numeric');
+    assert(FREQ[S.payFreq] !== undefined, 'payFreq valid, got ' + S.payFreq);
+    assert(S.extra >= 0, 'extra clamped');
+    var sim = simulate();
+    var last = sim.snaps[sim.snaps.length - 1];
+    assert(isFinite(last.total), 'no Infinity leak');
+  });
+})();

@@ -149,7 +149,7 @@ input[type=color]{height:36px;padding:3px;cursor:pointer}
 /* Help tooltips */
 .help-icon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--s3);border:1px solid var(--border);color:var(--dim);font-size:9px;font-weight:700;cursor:help;flex-shrink:0;position:relative;vertical-align:middle}
 .help-icon::after{content:attr(data-tip);position:absolute;left:20px;top:50%;transform:translateY(-50%);background:rgba(17,24,39,.98);border:1px solid var(--border);color:#c8d6e8;font-size:11px;font-weight:400;padding:9px 12px;border-radius:7px;white-space:normal;width:230px;z-index:600;line-height:1.55;pointer-events:none;display:none}
-.help-icon:hover::after{display:block}
+.help-icon:hover::after,.help-icon:focus::after{display:block}
 .lblrow{display:flex;align-items:center;gap:5px;margin-bottom:4px}
 .lblrow .lbl{margin:0}
 input[type=range]{-webkit-appearance:none;appearance:none;height:6px;background:var(--s3);border-radius:3px;outline:none;border:none;padding:0;display:block;width:100%}
@@ -565,7 +565,9 @@ const num = id => parseFloat($(id).value) || 0;
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const getCat = key => EXP_CATS.find(c => c.key === key) || EXP_CATS[EXP_CATS.length - 1];
 
-function dateFromMonth(m) { const d = new Date(); d.setMonth(d.getMonth() + m); return d; }
+// First of the month, m months from now. (Adding months to a Date on the
+// 29th-31st clamps into the following month and skips months entirely.)
+function dateFromMonth(m) { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + m, 1); }
 function monthStr(m) { return dateFromMonth(m).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); }
 function durStr(m) {
   const y = Math.floor(m / 12), mo = m % 12;
@@ -580,6 +582,17 @@ function toast(msg, isErr) {
 }
 function abox(cls, title, color, body) {
   return '<div class="abox ' + cls + '"><div class="abox-title" style="color:' + color + '">' + title + '</div><div class="abox-body">' + body + '</div></div>';
+}
+// Shown in place of a chart when the Chart.js CDN failed to load (offline).
+function chartFallback(canvasId) {
+  const c = $(canvasId); if (!c || !c.parentElement) return;
+  if (c.parentElement.querySelector('.chart-offline')) return;
+  c.style.display = 'none';
+  const msg = document.createElement('div');
+  msg.className = 'chart-offline';
+  msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim);font-size:12px;text-align:center;padding:12px;line-height:1.6';
+  msg.textContent = 'Chart unavailable — the chart library loads from the internet and could not be reached. All numbers, tables, and the timeline below still work.';
+  c.parentElement.appendChild(msg);
 }
 
 // ============================================================
@@ -619,15 +632,6 @@ function monthlyMatch() {
 // same month and never accrue interest. If cash can't cover all minimums,
 // savings are drawn down; when savings run out the plan "breaks down" and the
 // simulation stops there (no fee-spiral guessing).
-function aprAt(debt, m) {
-  let apr = debt.apr;
-  const target = dateFromMonth(m);
-  (debt.rateChanges || []).slice()
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .forEach(c => { if (new Date(c.date) <= target) apr = c.apr; });
-  return apr;
-}
-
 function simulate(opts) {
   opts = opts || {};
   const srcDebts = opts.debts || S.debts;
@@ -647,8 +651,18 @@ function simulate(opts) {
   const debts = srcDebts.map(d => ({
     id: d.id, name: d.name, type: d.type || 'other', apr: d.apr, minPay: d.minPay,
     rateChanges: d.rateChanges || [], bal: d.balance, interest: 0,
-    paidOff: d.balance <= 0 ? 0 : null
+    paidOff: d.balance <= 0 ? 0 : null,
+    // rate-change timestamps, precomputed once (aprNow walks these per month)
+    _rc: (d.rateChanges || [])
+      .map(c => ({ t: new Date(c.date).getTime(), apr: c.apr }))
+      .filter(c => isFinite(c.t))
+      .sort((a, b) => a.t - b.t)
   }));
+  const aprNow = (d, targetT) => {
+    let apr = d.apr;
+    for (const c of d._rc) { if (c.t <= targetT) apr = c.apr; else break; }
+    return apr;
+  };
 
   let sav = S.savings.balance;
   let rolled = 0;                 // freed minimums rolling into the extra payment
@@ -657,10 +671,12 @@ function simulate(opts) {
   const payoffEvents = [];        // {month, id, freedMin, extraNow}
 
   for (let m = 0; m <= MAX_MONTHS; m++) {
+    const targetT = dateFromMonth(m).getTime();
     const snap = { m, total: 0, bal: {}, sav, target: null, drewSavings: 0 };
     debts.forEach(d => { const b = Math.max(0, d.bal); snap.bal[d.id] = b; snap.total += b; });
     snaps.push(snap);
     if (snap.total < 0.005) break;
+    if (!isFinite(snap.total)) break; // absurd inputs overflowed — stop; debts stay "not on track"
 
     // 1. Monthly card charges
     let fullPay = 0; // paid-in-full charges on already-cleared cards (cash out)
@@ -674,7 +690,7 @@ function simulate(opts) {
     // 2. Interest
     debts.forEach(d => {
       if (d.bal <= 0) return;
-      const i = d.bal * (aprAt(d, m) / 100 / 12);
+      const i = d.bal * (aprNow(d, targetT) / 100 / 12);
       d.bal += i; d.interest += i;
     });
 
@@ -697,7 +713,7 @@ function simulate(opts) {
     let pool = Math.max(0, Math.min(cash, extra + rolled));
     if (pool > 0) {
       const targets = debts.filter(d => d.bal > 0 && (extraToMort || d.type !== 'mortgage'));
-      if (strategy === 'avalanche') targets.sort((a, b) => aprAt(b, m) - aprAt(a, m));
+      if (strategy === 'avalanche') targets.sort((a, b) => aprNow(b, targetT) - aprNow(a, targetT));
       else targets.sort((a, b) => a.bal - b.bal);
       if (targets.length) snap.target = targets[0].id;
       for (const t of targets) {
@@ -908,7 +924,8 @@ function renderDebts() {
     ? money(Math.max(0, C.freeCash + S.extra)) + '/mo is free after minimums, expenses, and savings.'
     : (C.net > 0 ? '' : 'Enter income first to see what you can afford.');
   $('extraMortTog').classList.toggle('on', S.extraToMortgage);
-  $('extraPay').value = S.extra || '';
+  // don't rewrite the field mid-keystroke (it eats "250." while typing)
+  if (document.activeElement !== $('extraPay')) $('extraPay').value = S.extra || '';
   $('strategy').value = S.strategy;
 
   const list = $('debtList');
@@ -1124,7 +1141,7 @@ function renderChart() {
   });
 
   if (mainChart) { mainChart.destroy(); mainChart = null; }
-  mainChart = new Chart($('mainChart').getContext('2d'), {
+  if (typeof Chart === 'undefined') chartFallback('mainChart'); else mainChart = new Chart($('mainChart').getContext('2d'), {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -1457,7 +1474,7 @@ function renderConsolidate() {
   const worst = valid.length ? valid.reduce((a, b) => a.totalInterest > b.totalInterest ? a : b) : null;
 
   if (consolChart) { consolChart.destroy(); consolChart = null; }
-  consolChart = new Chart($('consolChart').getContext('2d'), {
+  if (typeof Chart === 'undefined') chartFallback('consolChart'); else consolChart = new Chart($('consolChart').getContext('2d'), {
     type: 'bar',
     data: {
       labels: scenarios.map(s => s.apr + '%'),
@@ -1489,7 +1506,7 @@ function renderConsolidate() {
     const isBest = s === best, isWorst = s === worst && s.paidOff;
     const saved = C.sim.totalInterest - s.totalInterest;
     const faster = C.sim.allPaidMonth && s.months ? C.sim.allPaidMonth - s.months : null;
-    const hint = !s.paidOff ? 'Payment Too Low' : s.apr <= 5 ? 'Promo / Transfer' : s.apr <= 12 ? 'Excellent Credit' : s.apr <= 20 ? 'Good Credit' : 'Fair Credit';
+    const hint = !s.paidOff ? (s.months === null ? 'Payment Too Low' : 'Needs Longer Term') : s.apr <= 5 ? 'Promo / Transfer' : s.apr <= 12 ? 'Excellent Credit' : s.apr <= 20 ? 'Good Credit' : 'Fair Credit';
     const div = document.createElement('div');
     div.className = 'cs' + (isBest ? ' best' : isWorst ? ' worst' : '');
     div.innerHTML = '<div class="cs-head"><div><div class="cs-apr" style="color:' + (isBest ? 'var(--green)' : isWorst ? 'var(--red)' : 'var(--text)') + '">' + s.apr + '% APR</div>' +
@@ -1497,7 +1514,7 @@ function renderConsolidate() {
       '<div style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700">' + money(pay) + '/mo</div></div>' +
       '<div class="cs-metrics">' +
       '<div class="cs-m"><div class="cs-mv c-red">' + (s.paidOff ? money(s.totalInterest) : '∞') + '</div><div class="cs-ml">Total Interest</div></div>' +
-      '<div class="cs-m"><div class="cs-mv" style="font-size:9px;color:' + (s.paidOff ? 'var(--text)' : 'var(--red)') + '">' + (s.paidOff ? monthStr(s.months) + ' (' + Math.ceil(s.months / 12) + 'yr)' : 'Payment too low') + '</div><div class="cs-ml">Payoff</div></div>' +
+      '<div class="cs-m"><div class="cs-mv" style="font-size:9px;color:' + (s.paidOff ? 'var(--text)' : 'var(--red)') + '">' + (s.paidOff ? monthStr(s.months) + ' (' + Math.ceil(s.months / 12) + 'yr)' : (s.months === null ? 'Payment too low' : 'Not within term')) + '</div><div class="cs-ml">Payoff</div></div>' +
       '<div class="cs-m"><div class="cs-mv" style="color:' + (saved > 0 ? 'var(--green)' : 'var(--red)') + '">' + (s.paidOff ? money(Math.abs(saved)) : '—') + '</div><div class="cs-ml">' + (saved >= 0 ? 'Saved' : 'Extra Cost') + '</div></div></div>' +
       (faster !== null && s.paidOff ? '<div style="margin-top:7px;font-size:10px;color:' + (faster > 0 ? 'var(--green)' : faster < 0 ? 'var(--red)' : 'var(--dim)') + '">' + (faster > 0 ? '⚡ ' + faster + ' months faster than your plan' : faster < 0 ? '⚠ ' + (-faster) + ' months slower than your plan' : '⚖ Same timeline') + '</div>' : '');
     scen.appendChild(div);
@@ -1587,6 +1604,8 @@ function saveDebt() {
   save(); closeDebtModal(); refresh();
 }
 function deleteDebt(id) {
+  const d = S.debts.find(x => x.id === id);
+  if (d && !confirm('Delete "' + d.name + '" (' + money(d.balance) + ')?')) return;
   S.debts = S.debts.filter(x => x.id !== id);
   // Expenses that pointed at this card fall back to cash
   S.expenses.forEach(e => { if (e.paidWith === id) e.paidWith = 'cash'; });
@@ -1639,7 +1658,13 @@ function deleteExp(id) { S.expenses = S.expenses.filter(x => x.id !== id); save(
 // ============================================================
 // STORAGE + MIGRATION
 // ============================================================
-function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {} }
+let saveWarned = false;
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(S)); saveWarned = false; }
+  catch (e) {
+    if (!saveWarned) { saveWarned = true; toast('⚠ Could not save — browser storage is full or blocked. Use Export for a backup.', true); }
+  }
+}
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -1649,12 +1674,57 @@ function load() {
     if (old) { S = migrateOld(JSON.parse(old)); normalize(); save(); toast('Migrated your saved data to the new version'); }
   } catch (e) { S = defaultState(); }
 }
+// Repair/coerce whatever came out of storage, import, or migration into a
+// shape the engine can safely run on. Never throws; never drops good data.
 function normalize() {
   const def = defaultState();
-  S.k401 = Object.assign({}, def.k401, S.k401 || {});
-  S.savings = Object.assign({}, def.savings, S.savings || {});
-  S.debts = (S.debts || []).map(d => ({ rateChanges: [], ...d }));
-  S.expenses = (S.expenses || []).map(e => ({ paidWith: 'cash', ...e }));
+  const MAXV = 1e12; // sanity cap: a quadrillion-dollar debt is a typo, and huge values overflow the sim
+  const numOr = (v, d, min, max) => {
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
+  };
+  if (FREQ[S.payFreq] === undefined) S.payFreq = def.payFreq;
+  if (S.incomeMode !== 'gross' && S.incomeMode !== 'takehome') S.incomeMode = def.incomeMode;
+  S.incomeAmt = numOr(S.incomeAmt, 0, 0, MAXV);
+  S.taxPct = numOr(S.taxPct, def.taxPct, 0, 99);
+  S.grossAnnual = numOr(S.grossAnnual, 0, 0, MAXV);
+  S.extra = numOr(S.extra, 0, 0, MAXV);
+  if (S.strategy !== 'avalanche' && S.strategy !== 'snowball') S.strategy = def.strategy;
+  S.extraToMortgage = !!S.extraToMortgage;
+  const k = (S.k401 && typeof S.k401 === 'object') ? S.k401 : {};
+  S.k401 = { on: !!k.on, type: k.type === 'fixed' ? 'fixed' : 'percent',
+             amt: numOr(k.amt, 0, 0, MAXV), matchPct: numOr(k.matchPct, def.k401.matchPct, 0, 1000),
+             matchCap: numOr(k.matchCap, def.k401.matchCap, 0, 100), returnPct: numOr(k.returnPct, def.k401.returnPct, 0, 100) };
+  const sv = (S.savings && typeof S.savings === 'object') ? S.savings : {};
+  S.savings = { balance: numOr(sv.balance, 0, 0, MAXV), monthly: numOr(sv.monthly, 0, 0, MAXV),
+                efMonths: numOr(sv.efMonths, def.savings.efMonths, 1, 120) };
+  const colorOk = c => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+  S.debts = (Array.isArray(S.debts) ? S.debts : [])
+    .filter(d => d && typeof d === 'object')
+    .map((d, i) => ({
+      id: String(d.id || genId()),
+      name: String(d.name || 'Unnamed'),
+      type: TYPE_LBL[d.type] ? d.type : 'other',
+      balance: numOr(d.balance, 0, 0, MAXV),
+      apr: numOr(d.apr, 0, 0, 999),
+      minPay: numOr(d.minPay, 0, 0, MAXV),
+      color: colorOk(d.color) ? d.color : COLORS[i % COLORS.length],
+      rateChanges: (Array.isArray(d.rateChanges) ? d.rateChanges : [])
+        .filter(c => c && typeof c === 'object' && c.date && !isNaN(new Date(c.date).getTime()))
+        .map(c => ({ date: String(c.date), apr: numOr(c.apr, 0, 0, 999) }))
+    }));
+  const debtIds = {};
+  S.debts.forEach(d => { debtIds[d.id] = true; });
+  S.expenses = (Array.isArray(S.expenses) ? S.expenses : [])
+    .filter(e => e && typeof e === 'object')
+    .map(e => ({
+      id: String(e.id || genId()),
+      cat: EXP_CATS.some(c => c.key === e.cat) ? e.cat : 'other',
+      name: String(e.name || 'Expense'),
+      amount: numOr(e.amount, 0, 0, MAXV),
+      // an expense pointing at a deleted/unknown card would silently vanish from the math — route to cash
+      paidWith: (e.paidWith && e.paidWith !== 'cash' && debtIds[String(e.paidWith)]) ? String(e.paidWith) : 'cash'
+    }));
 }
 function migrateOld(o) {
   const n = defaultState();
@@ -1668,15 +1738,15 @@ function migrateOld(o) {
   } else {
     n.incomeMode = 'gross';
     n.incomeAmt = o.income || 0;
-    n.taxPct = o.tax || 22;
+    n.taxPct = (typeof o.tax === 'number' && isFinite(o.tax)) ? o.tax : 22; // 0% is a legitimate value
   }
   n.extra = o.extra || 0;
   n.strategy = o.strategy || 'avalanche';
   n.k401 = { on: !!o.has401k, type: o.contribType || 'percent', amt: o.contribAmt || 0, matchPct: o.matchPct || 0, matchCap: o.matchCap || 0, returnPct: o.returnRate || 7 };
   n.savings = { balance: o.checkingBalance || 0, monthly: (o.emergencyFund || 0) + (o.otherSavings || 0), efMonths: o.efMonths || 3 };
-  n.debts = (o.debts || []).map(d => ({
+  n.debts = (o.debts || []).map((d, i) => ({
     id: d.id, name: d.name, type: d.type || 'other', balance: d.balance || 0, apr: d.apr || 0,
-    minPay: d.minPayment || 0, color: d.color || '#ff6b6b',
+    minPay: d.minPayment || 0, color: d.color || COLORS[i % COLORS.length],
     rateChanges: (d.aprChanges || []).map(c => ({ date: c.date, apr: c.apr }))
   }));
   n.expenses = (o.expenses || []).map(e => ({
@@ -1699,15 +1769,20 @@ function exportJSON() {
 function importJSON(file) {
   const reader = new FileReader();
   reader.onload = e => {
+    const prev = S; // keep current state until the import fully succeeds
     try {
       const data = JSON.parse(e.target.result);
-      if (typeof data !== 'object' || !data) throw new Error('not a valid export file');
+      if (typeof data !== 'object' || !data || Array.isArray(data)) throw new Error('not a valid export file');
       S = (data.incomeAmt !== undefined || data.payFreq !== undefined)
         ? Object.assign(defaultState(), data)   // new format
         : migrateOld(data);                     // old format
-      normalize(); save(); syncInputs(); refresh();
+      normalize();
+      if (hasUserData(prev) && !confirm('Importing replaces your current data (' + prev.debts.length + ' debts, ' + prev.expenses.length + ' expenses). Continue?')) {
+        S = prev; return;
+      }
+      save(); syncInputs(); refresh();
       toast('✅ Imported: ' + S.debts.length + ' debts, ' + S.expenses.length + ' expenses');
-    } catch (err) { toast('❌ Import failed: ' + err.message, true); }
+    } catch (err) { S = prev; toast('❌ Import failed: ' + err.message, true); }
   };
   reader.readAsText(file);
 }
@@ -1738,7 +1813,12 @@ const SAMPLE = {
     { id: 'sample-exp12', cat: 'fitness', name: 'Gym', amount: 40, paidWith: 'sample-cc1' }
   ]
 };
+function hasUserData(st) {
+  return !!(st.debts.length || st.expenses.length || st.incomeAmt > 0);
+}
 function loadSample() {
+  if (hasUserData(S) && !S.debts.some(d => String(d.id).startsWith('sample-')) &&
+      !confirm('Replace your current data with the sample household? (Use Export first if you want a backup.)')) return;
   S = Object.assign(defaultState(), JSON.parse(JSON.stringify(SAMPLE)));
   normalize(); save(); syncInputs(); refresh(); toast('Sample data loaded');
 }
@@ -1857,6 +1937,8 @@ document.addEventListener('DOMContentLoaded', () => {
   wire();
   syncInputs();
   refresh();
+  // tooltips reachable by keyboard / tap, not just mouse hover
+  document.querySelectorAll('.help-icon').forEach(el => { el.tabIndex = 0; });
 });
 </script>
 </body>
