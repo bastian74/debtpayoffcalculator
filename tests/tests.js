@@ -297,4 +297,157 @@ var __TEST_RESULTS = [];
     var last = sim.snaps[sim.snaps.length - 1];
     assert(isFinite(last.total), 'no Infinity leak');
   });
+
+  // ---- T21: clampNum guards every typed numeric input ----
+  t('T21 clampNum clamps negatives, NaN, and absurd magnitudes', function () {
+    assert(clampNum(-500, 0, 1e12) === 0, 'negative clamped to min');
+    assert(clampNum('abc', 0, 100) === 0, 'NaN -> 0');
+    assert(clampNum('abc', 5, 100) === 5, 'NaN with positive min -> min');
+    assert(clampNum(1e15, 0, 1e12) === 1e12, 'huge value capped');
+    assert(clampNum('12.5', 0, 100) === 12.5, 'normal parse intact');
+    assert(clampNum('-3', 0, 60) === 0, 'typed negative string clamped');
+  });
+
+  // ---- T22: hostile imported debt id is sanitized and refs remapped ----
+  t('T22 normalize sanitizes markup ids and remaps paidWith', function () {
+    base();
+    S.debts = [{ id: '"><img src=x onerror=alert(1)>', name: 'Evil', balance: 100, apr: 0, minPay: 10 }];
+    S.expenses = [{ id: 'e1', name: 'Sub', amount: 10, paidWith: '"><img src=x onerror=alert(1)>' }];
+    normalize();
+    assert(/^[A-Za-z0-9_-]+$/.test(S.debts[0].id), 'id restricted to safe charset: ' + S.debts[0].id);
+    assert(S.expenses[0].paidWith === S.debts[0].id, 'expense follows the replaced id');
+  });
+
+  // ---- T23: duplicate imported ids are deduped, refs follow the first ----
+  t('T23 normalize dedupes ids', function () {
+    base();
+    S.debts = [
+      { id: 'dup', name: 'A', balance: 100, apr: 0, minPay: 10 },
+      { id: 'dup', name: 'B', balance: 200, apr: 0, minPay: 20 }
+    ];
+    S.expenses = [{ id: 'e1', name: 'x', amount: 5, paidWith: 'dup' }];
+    normalize();
+    assert(S.debts[0].id === 'dup', 'first keeps its id');
+    assert(S.debts[1].id !== 'dup', 'second regenerated');
+    assert(S.expenses[0].paidWith === 'dup', 'ref stays with the first');
+  });
+
+  // ---- T24: local date parsing + shared effective APR ----
+  t('T24 parseLocalDate is local / effectiveApr applies past changes', function () {
+    var dt = parseLocalDate('2026-03-01');
+    assert(dt.getFullYear() === 2026 && dt.getMonth() === 2 && dt.getDate() === 1, 'YYYY-MM-DD parses as LOCAL Mar 1 (no UTC previous-day shift)');
+    var d = { apr: 5, rateChanges: [{ date: '2000-01-01', apr: 20 }] };
+    assert(effectiveApr(d) === 20, 'past rate change reflected in current APR');
+    assert(effectiveApr(d, new Date(1999, 0, 1).getTime()) === 5, 'base APR before the change');
+  });
+
+  // ---- T25: 50-year cap is exactly 600 payment periods ----
+  t('T25 boundary: 600 payments fit, 601 do not', function () {
+    base();
+    S.debts = [debt({ balance: 600, apr: 0, minPay: 1 })];
+    var sim = simulate();
+    assert(sim.allPaid, 'a plan needing exactly 600 payments must finish');
+    assert(sim.allPaidMonth === 600, 'paid at month 600, got ' + sim.allPaidMonth);
+    S.debts = [debt({ balance: 601, apr: 0, minPay: 1 })];
+    sim = simulate();
+    assert(!sim.allPaid, 'a 601st payment must NOT be processed');
+  });
+
+  // ---- T26: %-of-balance minimum matches independent reference ----
+  t('T26 pct-mode declining minimum amortization', function () {
+    base();
+    S.debts = [debt({ balance: 1000, apr: 18, payMode: 'pct', payPct: 5, payFloor: 50, minPay: 0 })];
+    var sim = simulate();
+    var bal = 1000, interest = 0, m = 0;
+    while (bal > 0.005 && m < 2000) {
+      var i = bal * 0.18 / 12; interest += i; bal += i;
+      bal -= Math.min(bal, Math.max(50, bal * 0.05)); m++;
+    }
+    assert(sim.allPaid, 'paid');
+    assert(sim.allPaidMonth === m, 'months match ref: ' + sim.allPaidMonth + ' vs ' + m);
+    close(sim.totalInterest, interest, 0.01, 'interest matches ref');
+  });
+
+  // ---- T27: pct-mode payoff frees only the floor ----
+  t('T27 pct-mode rollover uses the floor', function () {
+    base();
+    S.extra = 100;
+    S.debts = [
+      debt({ id: 'p', balance: 200, apr: 0, payMode: 'pct', payPct: 10, payFloor: 40, minPay: 0 }),
+      debt({ id: 'q', balance: 10000, apr: 0, minPay: 100 })
+    ];
+    var sim = simulate();
+    var ev = sim.payoffEvents.find(function (e) { return e.id === 'p'; });
+    assert(ev, 'p pays off');
+    assert(ev.freedMin === 40, 'freed minimum is the floor, got ' + ev.freedMin);
+  });
+
+  // ---- T28: contractual term payment ----
+  t('T28 requiredPayment annuity formula', function () {
+    close(requiredPayment(10000, 0, 60), 10000 / 60, 0.001, '0% term payment');
+    var p = requiredPayment(10000, 12, 60);
+    close(p, 222.44, 0.05, '12%/60mo annuity payment');
+    var r = simConsolidated(10000, 12, p + 0.01, 60);
+    assert(r.paidOff, 'required payment repays within the term');
+  });
+
+  // ---- T29: sustainable surplus vs cash surplus ----
+  t('T29 card-financed expenses reduce sustainable surplus', function () {
+    base(); // $10k/mo take-home
+    S.debts = [debt({ id: 'cc', balance: 1000, apr: 0, minPay: 100 })];
+    S.expenses = [
+      { id: 'e1', cat: 'other', name: 'Rent', amount: 2000, paidWith: 'cash' },
+      { id: 'e2', cat: 'other', name: 'Food', amount: 500, paidWith: 'cc' }
+    ];
+    var C = calculate();
+    close(C.freeCash, 7900, 0.001, 'cash surplus ignores card charges');
+    close(C.cardExp, 500, 0.001, 'card expenses tracked');
+    close(C.sustainable, 7400, 0.001, 'sustainable = cash surplus - card-financed spending');
+  });
+
+  // ---- T30: 401(k) advice compares against the match CAP, not match dollars ----
+  t('T30 matchCapAmt fixes the hardship-advice comparison', function () {
+    S = defaultState();
+    S.incomeMode = 'gross'; S.payFreq = 'monthly'; S.incomeAmt = 6000; S.taxPct = 20;
+    S.k401 = { on: true, type: 'percent', amt: 5, matchPct: 50, matchCap: 6, returnPct: 7 };
+    S.debts = []; S.expenses = [];
+    var C = calculate();
+    close(C.m401, 300, 0.001, '5% of $6k gross');
+    close(C.matchCapAmt, 360, 0.001, 'cap threshold = 6% of gross');
+    assert(C.m401 > C.mMatch, 'sanity: the OLD buggy condition fires here');
+    assert(!(C.m401 > C.matchCapAmt), 'new condition must NOT fire — every dollar is still match-eligible');
+    S.k401.amt = 10;
+    C = calculate();
+    close(C.m401, 600, 0.001, '10% of $6k gross');
+    assert(C.m401 > C.matchCapAmt, 'genuinely over the cap IS flagged');
+    close(C.mMatch, 180, 0.001, 'match = 50% of the capped $360');
+  });
+
+  // ---- T31: consolidation comparison is engine-vs-engine, apples to apples ----
+  t('T31 identical consolidated loan reproduces the current plan exactly', function () {
+    base();
+    S.debts = [debt({ id: 'orig', balance: 5000, apr: 10, minPay: 150 })];
+    var cur = simulate();
+    var swapped = [
+      Object.assign({}, S.debts[0], { balance: 0 }),
+      { id: 'consol-loan', name: 'Loan', type: 'other', balance: 5000, apr: 10, minPay: 150, color: '#fff', rateChanges: [] }
+    ];
+    var plan = simulate({ debts: swapped, extra: 0 });
+    assert(plan.allPaid === cur.allPaid, 'same payoff outcome');
+    assert(plan.allPaidMonth === cur.allPaidMonth, 'same payoff month: ' + plan.allPaidMonth + ' vs ' + cur.allPaidMonth);
+    close(plan.totalInterest, cur.totalInterest, 0.01, 'same interest');
+  });
+
+  // ---- T32: payMode fields survive and are clamped by normalize ----
+  t('T32 normalize coerces payMode/payPct/payFloor', function () {
+    base();
+    S.debts = [{ id: 'a', name: 'A', balance: 1000, apr: 5, minPay: 20, payMode: 'pct', payPct: 250, payFloor: -5 }];
+    normalize();
+    assert(S.debts[0].payMode === 'pct', 'pct mode kept');
+    assert(S.debts[0].payPct === 100, 'payPct clamped to 100, got ' + S.debts[0].payPct);
+    assert(S.debts[0].payFloor === 0, 'negative floor clamped');
+    S.debts = [{ id: 'b', name: 'B', balance: 1000, apr: 5, minPay: 20, payMode: 'weird' }];
+    normalize();
+    assert(S.debts[0].payMode === 'fixed', 'unknown mode -> fixed');
+  });
 })();

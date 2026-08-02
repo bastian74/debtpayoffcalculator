@@ -417,6 +417,22 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
       </table>
     </div>
   </div>
+
+  <div class="card">
+    <details>
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px">📐 Model Assumptions &amp; Limits</summary>
+      <ul style="font-size:11px;color:var(--dim);line-height:1.8;margin:10px 0 0 18px">
+        <li><strong style="color:var(--text)">Income is averaged monthly.</strong> Weekly/bi-weekly pay is converted to a monthly average (26 checks ÷ 12), so ordinary two-paycheck months can run tighter than the projection shows.</li>
+        <li><strong style="color:var(--text)">Fixed payments stay fixed.</strong> A "fixed amount" payment is held constant for up to 50 years. Real card-issuer minimums decline with the balance — use the "% of balance" payment type to model paying only the true minimum.</li>
+        <li><strong style="color:var(--text)">Interest is APR÷12, monthly.</strong> Card interest is approximated as one-twelfth of APR applied monthly, with a full month of interest on new charges — real daily-average-balance billing differs slightly.</li>
+        <li><strong style="color:var(--text)">Mortgage payments must be principal + interest only.</strong> Escrow, taxes, insurance, and HOA don't reduce the loan; including them overstates progress.</li>
+        <li><strong style="color:var(--text)">Student-loan specifics aren't modeled.</strong> Income-driven repayment, interest subsidies, capitalization, forgiveness, and variable rates are outside this simulation.</li>
+        <li><strong style="color:var(--text)">Everything is nominal and constant.</strong> Income, expenses, and extra payments don't grow with time or inflation.</li>
+        <li><strong style="color:var(--text)">Gross-income mode approximates taxes.</strong> One combined rate is applied after removing 401(k) contributions — but pre-tax deferrals still pay Social Security/Medicare tax, so the modeled tax break is slightly generous.</li>
+        <li><strong style="color:var(--text)">No fees or penalties.</strong> Late fees, penalty APRs, and annual fees aren't simulated — a missed payment makes reality worse than this projection.</li>
+      </ul>
+    </details>
+  </div>
 </div>
 
 <!-- ============ ADVISOR ============ -->
@@ -429,16 +445,29 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
   <div class="card">
     <div class="card-title">🔀 Debt Consolidation — What If?</div>
     <p style="font-size:11px;color:var(--dim);margin-bottom:14px;line-height:1.6">
-      What if you rolled every debt into a single loan? Compare a range of consolidation APRs against your current plan.
+      Pick the debts you'd roll into a single loan and compare a range of APRs against your current plan.
+      The comparison keeps everything else equal: same income, same expenses, same other debts, and the same
+      total monthly outlay (minimums freed by the swap are redirected into extra payments).
     </p>
-    <div class="g2" style="margin-bottom:12px">
+    <div class="fld">
+      <div class="lbl">Debts To Consolidate</div>
+      <div class="pills" id="consolDebts"></div>
+      <div class="hint">Cards and personal loans are the usual candidates. Rolling secured loans (car, house) or federal student loans into a personal loan gives up protections and collateral terms — leave them out unless you know the product does this.</div>
+    </div>
+    <div class="g3" style="margin-bottom:12px">
       <div class="fld">
         <div class="lbl">Consolidated Monthly Payment</div>
-        <div class="pre"><span class="sym">$</span><input type="number" id="consolPay" placeholder="Auto — your current minimums" min="0"></div>
-        <div class="hint">Leave blank to use the sum of your current minimums.</div>
+        <div class="pre"><span class="sym">$</span><input type="number" id="consolPay" placeholder="Auto" min="0"></div>
+        <div class="hint">Blank = the required payment for the chosen term, or the selected debts' current minimums if no term.</div>
       </div>
-      <div class="fld"><div class="lbl">Loan Term Cap</div>
-        <select id="consolTerm"><option value="0">No cap</option><option value="36">3 yr</option><option value="60">5 yr</option><option value="84">7 yr</option><option value="120">10 yr</option><option value="180">15 yr</option></select>
+      <div class="fld"><div class="lbl">Loan Term</div>
+        <select id="consolTerm"><option value="0">None / open-ended</option><option value="36">3 yr</option><option value="60">5 yr</option><option value="84">7 yr</option><option value="120">10 yr</option><option value="180">15 yr</option></select>
+        <div class="hint">With payment blank, the term sets the contractual payment.</div>
+      </div>
+      <div class="fld">
+        <div class="lbl">Up-Front Fee</div>
+        <div class="suf"><span class="sym">%</span><input type="number" id="consolFee" value="0" min="0" max="25" step="0.5"></div>
+        <div class="hint">Balance-transfer fee / origination / closing costs, added to the loan. Transfers typically charge 3–5%.</div>
       </div>
     </div>
     <div class="g2" style="margin-bottom:5px">
@@ -476,8 +505,22 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
       </div>
     </div>
     <div class="fld">
-      <div class="lblrow"><div class="lbl">Minimum Monthly Payment</div><span class="help-icon" data-tip="The smallest payment your lender requires each month.">?</span></div>
+      <div class="lblrow"><div class="lbl">Monthly Payment Type</div><span class="help-icon" data-tip="Fixed: the amount you plan to pay every month (loans, or a card you pay a set amount on). % of balance: a real card-issuer minimum that shrinks as the balance falls — choose this if you only ever pay the card's stated minimum, otherwise the forecast is too optimistic.">?</span></div>
+      <select id="dPayMode"><option value="fixed">Fixed amount every month</option><option value="pct">% of balance (card-style minimum)</option></select>
+    </div>
+    <div class="fld" id="dMinPayFld">
+      <div class="lblrow"><div class="lbl">Monthly Payment</div><span class="help-icon" data-tip="Held constant for the whole projection. For a mortgage, enter principal + interest ONLY — escrow, taxes, insurance, and HOA don't reduce the loan and would corrupt the payoff math.">?</span></div>
       <div class="pre"><span class="sym">$</span><input type="number" id="dMinPay" placeholder="25" min="0"></div>
+    </div>
+    <div class="g2" id="dPctFlds" style="display:none">
+      <div class="fld">
+        <div class="lblrow"><div class="lbl">Minimum % of Balance</div><span class="help-icon" data-tip="Most card issuers require 1-3% of the balance each month. Check your statement.">?</span></div>
+        <div class="suf"><span class="sym">%</span><input type="number" id="dPayPct" placeholder="2" min="0" max="100" step="0.1"></div>
+      </div>
+      <div class="fld">
+        <div class="lblrow"><div class="lbl">Minimum Floor</div><span class="help-icon" data-tip="The smallest dollar minimum the issuer charges, typically $25-40.">?</span></div>
+        <div class="pre"><span class="sym">$</span><input type="number" id="dPayFloor" placeholder="25" min="0"></div>
+      </div>
     </div>
     <div style="margin-top:6px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px">
       <div class="lblrow" style="margin-bottom:8px">
@@ -561,9 +604,53 @@ const EXP_CATS = [
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const money = n => !isFinite(n) ? '$∞' : (n < 0 ? '-$' + Math.round(-n).toLocaleString() : '$' + Math.round(n).toLocaleString());
-const num = id => parseFloat($(id).value) || 0;
+// All numeric input flows through clampNum — typing "-500" or "1e99" must never
+// reach the engine (HTML min/max attributes don't block typed values).
+const clampNum = (v, min, max) => {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!isFinite(n)) return Math.max(0, min);
+  return Math.min(max, Math.max(min, n));
+};
+const num = id => {
+  const el = $(id);
+  const min = el && el.min !== '' && isFinite(parseFloat(el.min)) ? parseFloat(el.min) : 0;
+  const max = el && el.max !== '' && isFinite(parseFloat(el.max)) ? parseFloat(el.max) : 1e12;
+  return clampNum(el ? el.value : 0, min, max);
+};
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const getCat = key => EXP_CATS.find(c => c.key === key) || EXP_CATS[EXP_CATS.length - 1];
+// "YYYY-MM-DD" parsed by new Date() is UTC midnight — which is the previous
+// day in US time zones. Parse date-only strings as LOCAL calendar dates.
+function parseLocalDate(s) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(s || '').trim());
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  return new Date(s);
+}
+// The APR actually in effect at a point in time (base APR + any rate changes
+// that have kicked in). Every APR-dependent display and sort must use this,
+// not d.apr, or a card past its promo date shows stale numbers.
+function effectiveApr(d, atTime) {
+  let apr = d.apr;
+  const t = (atTime === undefined) ? Date.now() : atTime;
+  (d.rateChanges || [])
+    .map(c => ({ t: parseLocalDate(c.date).getTime(), apr: c.apr }))
+    .filter(c => isFinite(c.t))
+    .sort((a, b) => a.t - b.t)
+    .forEach(c => { if (c.t <= t) apr = c.apr; });
+  return apr;
+}
+// This month's required payment for a debt at its current balance.
+// 'pct' mode models real card minimums (a % of balance with a floor), which
+// shrink as the balance falls; 'fixed' is a planned constant payment.
+function currentMinPay(d) {
+  if (d.payMode === 'pct') return Math.max(d.payFloor || 0, (d.balance || 0) * (d.payPct || 0) / 100);
+  return d.minPay;
+}
+// Contractual payment that amortizes P over n months at aprPct.
+function requiredPayment(P, aprPct, n) {
+  const r = aprPct / 100 / 12;
+  return r > 0 ? P * r / (1 - Math.pow(1 + r, -n)) : P / n;
+}
 
 // First of the month, m months from now. (Adding months to a Date on the
 // 29th-31st clamps into the following month and skips months entirely.)
@@ -650,11 +737,12 @@ function simulate(opts) {
 
   const debts = srcDebts.map(d => ({
     id: d.id, name: d.name, type: d.type || 'other', apr: d.apr, minPay: d.minPay,
+    payMode: d.payMode || 'fixed', payPct: d.payPct || 0, payFloor: d.payFloor || 0,
     rateChanges: d.rateChanges || [], bal: d.balance, interest: 0,
     paidOff: d.balance <= 0 ? 0 : null,
     // rate-change timestamps, precomputed once (aprNow walks these per month)
     _rc: (d.rateChanges || [])
-      .map(c => ({ t: new Date(c.date).getTime(), apr: c.apr }))
+      .map(c => ({ t: parseLocalDate(c.date).getTime(), apr: c.apr }))
       .filter(c => isFinite(c.t))
       .sort((a, b) => a.t - b.t)
   }));
@@ -663,6 +751,9 @@ function simulate(opts) {
     for (const c of d._rc) { if (c.t <= targetT) apr = c.apr; else break; }
     return apr;
   };
+  // Required payment this month: fixed, or % of current balance with a floor
+  // (card-style minimums that decline as the balance falls).
+  const minNow = d => d.payMode === 'pct' ? Math.max(d.payFloor, d.bal * d.payPct / 100) : d.minPay;
 
   let sav = S.savings.balance;
   let rolled = 0;                 // freed minimums rolling into the extra payment
@@ -677,6 +768,7 @@ function simulate(opts) {
     snaps.push(snap);
     if (snap.total < 0.005) break;
     if (!isFinite(snap.total)) break; // absurd inputs overflowed — stop; debts stay "not on track"
+    if (m === MAX_MONTHS) break; // 601 opening snapshots but exactly 600 payment periods
 
     // 1. Monthly card charges
     let fullPay = 0; // paid-in-full charges on already-cleared cards (cash out)
@@ -696,7 +788,7 @@ function simulate(opts) {
 
     // 3. Minimums (draw savings on shortfall; stop if truly unpayable)
     let cash = budget - fullPay;
-    const due = debts.reduce((s, d) => s + (d.bal > 0 ? Math.min(d.bal, d.minPay) : 0), 0);
+    const due = debts.reduce((s, d) => s + (d.bal > 0 ? Math.min(d.bal, minNow(d)) : 0), 0);
     if (cash < due) {
       const fromSav = Math.min(sav, due - cash);
       sav -= fromSav; cash += fromSav; snap.drewSavings = fromSav;
@@ -704,7 +796,7 @@ function simulate(opts) {
     }
     debts.forEach(d => {
       if (d.bal <= 0) return;
-      const p = Math.min(d.bal, d.minPay);
+      const p = Math.min(d.bal, minNow(d));
       d.bal -= p; cash -= p;
       if (d.bal < 0.005) markPaid(d, m);
     });
@@ -732,8 +824,11 @@ function simulate(opts) {
     d.bal = 0;
     if (d.paidOff !== null) return;
     d.paidOff = m + 1;
-    rolled += d.minPay;
-    payoffEvents.push({ month: m + 1, id: d.id, freedMin: d.minPay, extraNow: extra + rolled });
+    // pct-mode minimums have already shrunk toward the floor by payoff time,
+    // so only the floor is genuinely freed cash going forward
+    const freed = d.payMode === 'pct' ? (d.payFloor || 0) : d.minPay;
+    rolled += freed;
+    payoffEvents.push({ month: m + 1, id: d.id, freedMin: freed, extraNow: extra + rolled });
   }
 
   const totalInterest = debts.reduce((s, d) => s + d.interest, 0);
@@ -761,38 +856,52 @@ function simConsolidated(totalBal, aprPct, monthlyPay, termMonths) {
 // ============================================================
 function calculate() {
   const net = monthlyNet(), gross = monthlyGross(), m401 = monthly401k(), mMatch = monthlyMatch();
+  // Contribution level needed to capture the full employer match. Comparing
+  // m401 against mMatch (the employer's dollars) is wrong: with a 50% match,
+  // m401 > mMatch even when every contributed dollar is still match-eligible.
+  const matchCapAmt = S.k401.on ? gross * (S.k401.matchCap / 100) : 0;
   const totalDebt = S.debts.reduce((s, d) => s + d.balance, 0);
-  const totalMin = S.debts.reduce((s, d) => s + (d.balance > 0 ? d.minPay : 0), 0);
+  const totalMin = S.debts.reduce((s, d) => s + (d.balance > 0 ? currentMinPay(d) : 0), 0);
   const cashExp = S.expenses.filter(e => !e.paidWith || e.paidWith === 'cash').reduce((s, e) => s + e.amount, 0);
   const cardExp = S.expenses.filter(e => e.paidWith && e.paidWith !== 'cash').reduce((s, e) => s + e.amount, 0);
   const totalExp = cashExp + cardExp;
 
   const sim = simulate();
   const budget = sim.budget;                        // net - cashExp - savings contribution
-  const freeCash = budget - totalMin - S.extra;     // left over after the whole plan
+  const freeCash = budget - totalMin - S.extra;     // cash-account surplus this month
+  // Sustainable surplus: what's truly left after ALL living expenses, including
+  // the ones charged to cards. freeCash alone can look green while the
+  // household finances groceries on a card every month.
+  const sustainable = freeCash - cardExp;
   const minShort = Math.max(0, totalMin - budget);  // can't even cover minimums
 
   const trueCost = totalDebt > 0 ? (sim.allPaid ? 1 + sim.totalInterest / totalDebt : Infinity) : 1;
+  // Share of take-home going to minimums — a budgeting ratio, NOT lender DTI
+  // (lenders use gross income and count more obligations).
   const dti = net > 0 ? totalMin / net * 100 : 0;
+  const dtiGross = gross > 0 ? totalMin / gross * 100 : 0;
 
-  // Per-debt: monthly charges routed to it, and negative-amortization check
+  // Per-debt: monthly charges routed to it, and negative-amortization check.
+  // aprNow/minNow are what's in effect TODAY (post rate change, current balance).
   const chargesByDebt = {};
   S.expenses.forEach(e => { if (e.paidWith && e.paidWith !== 'cash') chargesByDebt[e.paidWith] = (chargesByDebt[e.paidWith] || 0) + e.amount; });
   const debtInfo = S.debts.map(d => {
-    const monthlyInt = d.balance * (d.apr / 100 / 12);
+    const aprNow = effectiveApr(d);
+    const minNow = currentMinPay(d);
+    const monthlyInt = d.balance * (aprNow / 100 / 12);
     const charges = chargesByDebt[d.id] || 0;
     const sd = sim.debts.find(x => x.id === d.id);
     return {
-      d, monthlyInt, charges,
+      d, aprNow, minNow, monthlyInt, charges,
       needed: monthlyInt + charges,
-      isGrowing: d.balance > 0 && d.minPay < monthlyInt + charges,
+      isGrowing: d.balance > 0 && minNow < monthlyInt + charges,
       paidOff: sd ? sd.paidOff : null,
       totalInterest: sd ? sd.interest : 0
     };
   });
 
-  CALC = { net, gross, m401, mMatch, totalDebt, totalMin, cashExp, cardExp, totalExp,
-           sim, budget, freeCash, minShort, trueCost, dti, debtInfo, chargesByDebt };
+  CALC = { net, gross, m401, mMatch, matchCapAmt, totalDebt, totalMin, cashExp, cardExp, totalExp,
+           sim, budget, freeCash, sustainable, minShort, trueCost, dti, dtiGross, debtInfo, chargesByDebt };
   return CALC;
 }
 
@@ -806,18 +915,21 @@ function renderSummary() {
     ? money(C.gross * 12) + '/yr gross est. · ' + C.dti.toFixed(1) + '% of take-home goes to minimums'
     : 'enter income to begin';
 
-  // Outflow rows — mutually exclusive so they sum correctly
-  const housingExp = S.expenses.filter(e => e.cat === 'housing').reduce((s, e) => s + e.amount, 0);
-  const mortMin = S.debts.filter(d => d.type === 'mortgage' && d.balance > 0).reduce((s, d) => s + d.minPay, 0);
-  const housing = housingExp + mortMin;
-  const spending = C.totalExp - housingExp;
+  // Outflow rows — mutually exclusive so they sum correctly. Cash rows only:
+  // card-charged expenses are borrowed, not paid from this month's income,
+  // so they get their own clearly-labeled row instead of inflating "spending".
+  const housingCash = S.expenses.filter(e => e.cat === 'housing' && (!e.paidWith || e.paidWith === 'cash')).reduce((s, e) => s + e.amount, 0);
+  const mortMin = C.debtInfo.filter(i => i.d.type === 'mortgage' && i.d.balance > 0).reduce((s, i) => s + i.minNow, 0);
+  const housing = housingCash + mortMin;
+  const spending = C.cashExp - housingCash;
   const otherMins = C.totalMin - mortMin;
   const rows = [
     { icon: '🏠', label: 'Housing' + (mortMin > 0 ? ' (incl. mortgage)' : ''), val: housing, color: 'var(--purple)' },
-    { icon: '🧾', label: 'Living expenses', val: spending, color: '#e55d5d' },
+    { icon: '🧾', label: 'Living expenses (cash)', val: spending, color: '#e55d5d' },
     { icon: '💳', label: 'Debt minimums' + (mortMin > 0 ? ' (excl. mortgage)' : ''), val: otherMins, color: 'var(--blue)' },
     { icon: '⚡', label: 'Extra debt payment', val: S.extra, color: 'var(--yellow)' },
-    { icon: '💰', label: 'Savings contribution', val: S.savings.monthly, color: 'var(--green)' }
+    { icon: '💰', label: 'Savings contribution', val: S.savings.monthly, color: 'var(--green)' },
+    { icon: '🛒', label: 'Charged to cards (borrowed, lands on balances)', val: C.cardExp, color: 'var(--red)' }
   ];
   let html = '';
   rows.forEach(r => {
@@ -835,7 +947,9 @@ function renderSummary() {
   }
   $('sumRows').innerHTML = html || '<div style="font-size:11px;color:var(--dimmer)">Add expenses and debts to see the breakdown.</div>';
 
-  // Left-over figure
+  // Left-over figure — headline is the SUSTAINABLE surplus (after every living
+  // expense, including card-charged ones). A green number while the household
+  // borrows for groceries would be a lie.
   const leftEl = $('sumLeft'), lblEl = $('sumLeftLbl'), subEl = $('sumLeftSub');
   if (C.net <= 0) {
     leftEl.className = 'sum-big'; leftEl.style.color = 'var(--dimmer)'; leftEl.textContent = '$0';
@@ -848,10 +962,18 @@ function renderSummary() {
     leftEl.className = 'sum-big c-yellow'; leftEl.style.color = '';
     leftEl.textContent = money(Math.abs(C.freeCash));
     lblEl.textContent = '⚠ Extra Payment Too Big'; subEl.textContent = 'reduce extra by this much to balance';
+  } else if (C.sustainable < 0) {
+    leftEl.className = 'sum-big c-red'; leftEl.style.color = '';
+    leftEl.textContent = money(Math.abs(C.sustainable));
+    lblEl.textContent = '⚠ Borrowing To Live';
+    subEl.textContent = 'expenses exceed cash by this much — the gap is charged to cards each month';
   } else {
     leftEl.className = 'sum-big c-green'; leftEl.style.color = '';
-    leftEl.textContent = money(C.freeCash);
-    lblEl.textContent = 'Left Over Each Month'; subEl.textContent = 'after bills, minimums, and extra';
+    leftEl.textContent = money(C.sustainable);
+    lblEl.textContent = 'Left Over Each Month';
+    subEl.textContent = C.cardExp > 0
+      ? 'after all expenses (incl. ' + money(C.cardExp) + '/mo charged to cards), minimums, and extra'
+      : 'after bills, minimums, and extra';
   }
 
   // Mini stats
@@ -937,30 +1059,34 @@ function renderDebts() {
       const d = info.d;
       const payStr = info.paidOff ? monthStr(info.paidOff) : (d.balance > 0 ? 'not on track' : 'paid');
       const payColor = info.paidOff ? 'var(--green)' : (d.balance > 0 ? 'var(--red)' : 'var(--green)');
-      const changes = (d.rateChanges || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+      const changes = (d.rateChanges || []).slice().sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
       let chHtml = '';
       if (changes.length) {
         chHtml = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:9px;color:var(--dimmer)">Rate changes:</span>';
+        let prevApr = d.apr;
         changes.forEach(c => {
-          const up = c.apr > d.apr;
+          const up = c.apr > prevApr; prevApr = c.apr;
           chHtml += '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(42,58,85,.6);border:1px solid var(--border)">' +
             (up ? '↑' : '↓') + ' <strong style="color:' + (up ? 'var(--red)' : 'var(--green)') + '">' + c.apr + '%</strong> on ' +
-            new Date(c.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + '</span>';
+            parseLocalDate(c.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + '</span>';
         });
         chHtml += '</div>';
       }
+      const minStr = d.payMode === 'pct'
+        ? (d.payPct || 0) + '% of bal (≥' + money(d.payFloor || 0) + ')'
+        : money(d.minPay);
       html += '<div class="debt-item" style="border-left-color:' + (d.color || '#ff6b6b') + '">' +
         '<div class="di-head"><div><div class="di-name">' + esc(d.name) + '</div><span class="badge b-' + d.type + '">' + TYPE_LBL[d.type] + '</span></div>' +
-        '<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" data-edit="' + d.id + '">Edit</button><button class="btn btn-red" data-del="' + d.id + '">✕</button></div></div>' +
+        '<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" data-edit="' + esc(d.id) + '">Edit</button><button class="btn btn-red" data-del="' + esc(d.id) + '">✕</button></div></div>' +
         '<div class="di-stats">' +
           '<div><div class="ds-lbl">Balance</div><div class="ds-val">' + money(d.balance) + '</div></div>' +
-          '<div><div class="ds-lbl">APR</div><div class="ds-val" style="color:var(--red)">' + d.apr + '%</div></div>' +
-          '<div><div class="ds-lbl">Min/Mo</div><div class="ds-val">' + money(d.minPay) + '</div></div>' +
+          '<div><div class="ds-lbl">APR' + (info.aprNow !== d.apr ? ' (now)' : '') + '</div><div class="ds-val" style="color:var(--red)">' + info.aprNow + '%</div></div>' +
+          '<div><div class="ds-lbl">Min/Mo</div><div class="ds-val">' + minStr + '</div></div>' +
           (info.charges > 0 ? '<div><div class="ds-lbl" style="color:var(--yellow)">Charges/Mo</div><div class="ds-val" style="color:var(--yellow)">+' + money(info.charges) + '</div></div>' : '') +
           '<div><div class="ds-lbl">Payoff</div><div class="ds-val" style="color:' + payColor + '">' + payStr + '</div></div>' +
         '</div>' +
         (info.isGrowing
-          ? '<div style="margin-top:6px;padding:5px 8px;background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.25);border-radius:5px;font-size:10px;color:var(--red)">⚠ Growing: min ' + money(d.minPay) + ' &lt; interest ' + money(Math.round(info.monthlyInt)) + (info.charges > 0 ? ' + charges ' + money(info.charges) : '') + ' — needs ' + money(Math.ceil(info.needed)) + '/mo just to hold steady</div>'
+          ? '<div style="margin-top:6px;padding:5px 8px;background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.25);border-radius:5px;font-size:10px;color:var(--red)">⚠ Growing: min ' + money(Math.round(info.minNow)) + ' &lt; interest ' + money(Math.round(info.monthlyInt)) + (info.charges > 0 ? ' + charges ' + money(info.charges) : '') + ' — needs ' + money(Math.ceil(info.needed)) + '/mo just to hold steady</div>'
           : '') +
         chHtml + '</div>';
     });
@@ -976,7 +1102,7 @@ function renderDebts() {
   if (!growing.length) {
     box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--green);font-size:11px"><span style="font-size:15px">✅</span><span>Every minimum covers its interest and charges — all extra payment is real progress.</span></div>';
   } else {
-    const deficit = growing.reduce((s, i) => s + (i.needed - i.d.minPay), 0);
+    const deficit = growing.reduce((s, i) => s + (i.needed - i.minNow), 0);
     const needExtra = Math.ceil(deficit / 25) * 25 + 25;
     const ok = S.extra >= needExtra;
     box.innerHTML = '<div style="font-size:11px;color:var(--dim);margin-bottom:6px"><strong style="color:var(--red)">' + growing.length + ' debt' + (growing.length > 1 ? 's grow' : ' grows') + ' every month</strong> — minimums don\'t cover interest' + (growing.some(i => i.charges > 0) ? ' + card charges' : '') + ' (combined gap ' + money(Math.ceil(deficit)) + '/mo).</div>' +
@@ -1000,7 +1126,7 @@ function renderBudget() {
       let badge;
       if (exp.paidWith && exp.paidWith !== 'cash') {
         const card = S.debts.find(d => d.id === exp.paidWith);
-        const hi = card && card.apr >= 20 && card.balance > 0;
+        const hi = card && effectiveApr(card) >= 20 && card.balance > 0;
         badge = card
           ? '<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:' + (hi ? 'rgba(255,107,107,.18)' : 'rgba(116,185,255,.15)') + ';color:' + (hi ? 'var(--red)' : 'var(--blue)') + ';margin-left:4px">' + (hi ? '⚠ ' : '') + esc(card.name) + '</span>'
           : '<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(255,107,107,.15);color:var(--red);margin-left:4px">⚠ card deleted</span>';
@@ -1011,7 +1137,7 @@ function renderBudget() {
         '<div class="exp-icon">' + cat.icon + '</div>' +
         '<div class="exp-body"><div class="exp-name">' + esc(exp.name) + badge + '</div><div class="exp-cat">' + cat.label + '</div></div>' +
         '<div class="exp-amount" style="color:' + cat.color + '">' + money(exp.amount) + '</div>' +
-        '<div class="exp-actions"><button class="btn btn-ghost btn-sm" data-exp-edit="' + exp.id + '">✏</button><button class="btn btn-red" data-exp-del="' + exp.id + '">✕</button></div></div>';
+        '<div class="exp-actions"><button class="btn btn-ghost btn-sm" data-exp-edit="' + esc(exp.id) + '">✏</button><button class="btn btn-red" data-exp-del="' + esc(exp.id) + '">✕</button></div></div>';
     });
     list.innerHTML = html;
   }
@@ -1019,17 +1145,20 @@ function renderBudget() {
   // Breakdown card
   const el = $('budgetBreakdown');
   if (C.net <= 0) { el.innerHTML = '<div class="empty"><div class="empty-ico">📭</div>Add income to see your budget.</div>'; return; }
-  const housingExp = S.expenses.filter(e => e.cat === 'housing').reduce((s, e) => s + e.amount, 0);
-  const mortMin = S.debts.filter(d => d.type === 'mortgage' && d.balance > 0).reduce((s, d) => s + d.minPay, 0);
+  // Allocation bar covers CASH only — card-charged expenses are borrowed, not
+  // paid from this month's income, so putting them in the bar pushed it past
+  // 100% while "left over" still claimed the unspent (borrowed) cash.
+  const housingCash = S.expenses.filter(e => e.cat === 'housing' && (!e.paidWith || e.paidWith === 'cash')).reduce((s, e) => s + e.amount, 0);
+  const mortMin = C.debtInfo.filter(i => i.d.type === 'mortgage' && i.d.balance > 0).reduce((s, i) => s + i.minNow, 0);
   const rows = [
-    { label: 'Housing', amount: housingExp + mortMin, color: '#a29bfe' },
-    { label: 'Living expenses', amount: C.totalExp - housingExp, color: '#e55d5d' },
+    { label: 'Housing', amount: housingCash + mortMin, color: '#a29bfe' },
+    { label: 'Living expenses (cash)', amount: C.cashExp - housingCash, color: '#e55d5d' },
     { label: 'Debt minimums', amount: C.totalMin - mortMin, color: '#74b9ff' },
     { label: 'Extra payment', amount: S.extra, color: '#ffd166' },
     { label: 'Savings', amount: S.savings.monthly, color: '#00e5b0' },
-    { label: 'Left over', amount: Math.max(0, C.freeCash), color: '#2d3436' }
+    { label: 'Left over (cash)', amount: Math.max(0, C.freeCash), color: '#2d3436' }
   ];
-  let html = '<div style="margin-bottom:14px"><div style="font-size:10px;color:var(--dim);margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Income Allocation</div>';
+  let html = '<div style="margin-bottom:14px"><div style="font-size:10px;color:var(--dim);margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Cash Income Allocation</div>';
   html += '<div style="display:flex;height:20px;border-radius:5px;overflow:hidden;gap:1px">';
   rows.forEach(r => {
     const pct = Math.min(100, r.amount / C.net * 100);
@@ -1041,7 +1170,11 @@ function renderBudget() {
     if (r.amount <= 0) return;
     html += '<div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--dim)"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:' + r.color + '"></span>' + r.label + ' <strong style="color:var(--text)">' + money(r.amount) + '</strong></div>';
   });
-  html += '</div></div>';
+  html += '</div>';
+  if (C.cardExp > 0) {
+    html += '<div style="font-size:10px;color:var(--yellow);margin-top:6px">💳 Plus <strong>' + money(C.cardExp) + '/mo</strong> of expenses charged to cards — borrowed this month, repaid through the balances above.</div>';
+  }
+  html += '</div>';
 
   // Category bars
   const grouped = {};
@@ -1058,8 +1191,9 @@ function renderBudget() {
   }
 
   if (C.freeCash < 0) html += abox('ar', '⚠ Monthly Shortfall: ' + money(Math.abs(C.freeCash)), 'var(--red)', 'Expenses, minimums, savings, and extra payment exceed take-home by <strong>' + money(Math.abs(C.freeCash)) + '/mo</strong>. Lower the extra payment or trim expenses.');
-  else if (C.freeCash < 200) html += abox('ay', '⚡ Tight: only ' + money(C.freeCash) + ' unallocated', 'var(--yellow)', 'One surprise bill could push you into deficit. Consider leaving a little more slack.');
-  else html += abox('ag', '✅ ' + money(C.freeCash) + '/mo unallocated', 'var(--green)', 'You could put some of this toward the extra debt payment — every $100/mo meaningfully moves your debt-free date. Check the Projection slider.');
+  else if (C.sustainable < 0) html += abox('ar', '⚠ Borrowing ' + money(Math.abs(C.sustainable)) + '/mo for living expenses', 'var(--red)', 'Cash covers the bills paid from checking, but <strong>' + money(C.cardExp) + '/mo</strong> of expenses go on cards and only <strong>' + money(C.freeCash) + '/mo</strong> of cash is left to absorb them. The difference — <strong>' + money(Math.abs(C.sustainable)) + '/mo</strong> — is new debt every month. Move expenses to cash or cut them until this turns positive.');
+  else if (C.sustainable < 200) html += abox('ay', '⚡ Tight: only ' + money(C.sustainable) + ' truly free', 'var(--yellow)', 'After every expense (including the ' + (C.cardExp > 0 ? money(C.cardExp) + '/mo charged to cards' : 'card charges') + '), one surprise bill could push you into deficit. Consider leaving a little more slack.');
+  else html += abox('ag', '✅ ' + money(C.sustainable) + '/mo truly free', 'var(--green)', 'That\'s what remains after ALL living expenses' + (C.cardExp > 0 ? ' — including the ' + money(C.cardExp) + '/mo charged to cards' : '') + ', minimums, savings, and extra. You could put some of it toward the extra debt payment — every $100/mo meaningfully moves your debt-free date. Check the Projection slider.');
   el.innerHTML = html;
 }
 
@@ -1187,12 +1321,12 @@ function renderTimeline() {
     if (!info || info.d.balance <= 0) return;
     events.push({ month: ev.month, kind: 'payoff', info, freedMin: ev.freedMin, extraNow: ev.extraNow });
   });
-  // Future rate changes
+  // Future rate changes (local calendar months — avoids the UTC previous-day shift)
   const now = new Date();
   S.debts.forEach(d => (d.rateChanges || []).forEach(c => {
-    const cd = new Date(c.date);
-    if (cd <= now) return;
-    const m = Math.round((cd - now) / (1000 * 60 * 60 * 24 * 30.44));
+    const cd = parseLocalDate(c.date);
+    if (isNaN(cd.getTime()) || cd <= now) return;
+    const m = Math.max(0, (cd.getFullYear() - now.getFullYear()) * 12 + (cd.getMonth() - now.getMonth()));
     if (m > MAX_MONTHS) return;
     events.push({ month: m, kind: 'rate', d, newApr: c.apr, date: cd });
   }));
@@ -1216,15 +1350,16 @@ function renderTimeline() {
   S.debts.forEach(d => {
     const info = C.debtInfo.find(i => i.d.id === d.id);
     const isTarget = d.id === firstTarget;
-    const pay = d.minPay + (isTarget ? S.extra : 0);
+    const minNow = info ? info.minNow : d.minPay;
+    const pay = minNow + (isTarget ? S.extra : 0);
     html += '<div style="display:flex;align-items:stretch;border-radius:6px;overflow:hidden;border:1px solid var(--border)">' +
       '<div style="width:4px;background:' + (d.color || '#8899b4') + ';flex-shrink:0"></div>' +
       '<div style="flex:1;padding:7px 10px"><div style="display:flex;justify-content:space-between;align-items:center">' +
-      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:700">' + esc(d.name) + '</span><span style="font-size:9px;color:var(--dimmer)">' + d.apr + '% APR</span>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:700">' + esc(d.name) + '</span><span style="font-size:9px;color:var(--dimmer)">' + (info ? info.aprNow : d.apr) + '% APR</span>' +
       (isTarget && S.extra > 0 ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(255,209,102,.2);color:var(--yellow)">★ extra goes here</span>' : '') + '</div>' +
       '<span style="font-size:12px;font-weight:800;font-family:ui-monospace,monospace;color:var(--accent)">' + money(pay) + '/mo</span></div>' +
       '<div style="display:flex;gap:10px;font-size:10px;color:var(--dimmer);flex-wrap:wrap;margin-top:3px">' +
-      '<span>min: ' + money(d.minPay) + '</span>' +
+      '<span>min: ' + (d.payMode === 'pct' ? (d.payPct || 0) + '% of bal (≥' + money(d.payFloor || 0) + ')' : money(d.minPay)) + '</span>' +
       (info && info.monthlyInt > 0 ? '<span>interest: ' + money(Math.round(info.monthlyInt)) + '/mo</span>' : '') +
       (info && info.charges > 0 ? '<span style="color:var(--yellow)">charges: +' + money(info.charges) + '/mo</span>' : '') +
       '<span>balance: ' + money(d.balance) + '</span></div></div></div>';
@@ -1245,17 +1380,18 @@ function renderTimeline() {
         '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:5px">' +
           '<span style="padding:2px 8px;border-radius:4px;background:var(--s2);color:var(--dim)">⏱ ' + durStr(ev.month) + '</span>' +
           '<span style="padding:2px 8px;border-radius:4px;background:var(--s2);color:var(--red)">' + money(Math.round(ev.info.totalInterest)) + ' interest paid</span>' +
-          '<span style="padding:2px 8px;border-radius:4px;background:var(--s2);color:var(--yellow)">' + d.apr + '% APR</span></div>' +
+          '<span style="padding:2px 8px;border-radius:4px;background:var(--s2);color:var(--yellow)">' + ev.info.aprNow + '% APR</span></div>' +
         (d.type === 'credit' && ev.info.charges > 0
           ? '<div style="font-size:10px;color:var(--green);padding:4px 8px;background:rgba(0,229,176,.07);border-radius:4px;border:1px solid rgba(0,229,176,.2)">✓ From here on, its ' + money(ev.info.charges) + '/mo in charges get paid in full — no more interest</div>'
           : (ev.freedMin > 0 ? '<div style="font-size:10px;color:var(--accent)">↳ ' + money(ev.freedMin) + '/mo minimum freed' + (next ? ' — total attack power now ' + money(ev.extraNow) + '/mo' : ' — all debt cleared') + '</div>' : '')) +
         '</div></div>';
     } else if (ev.kind === 'rate') {
-      const up = ev.newApr > ev.d.apr;
+      const prevApr = effectiveApr(ev.d, ev.date.getTime() - 1);
+      const up = ev.newApr > prevApr;
       html += '<div class="tl-ev"><div class="tl-dot" style="background:' + (up ? 'var(--red)' : 'var(--green)') + '"></div><div style="flex:1">' +
         '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:9px;font-weight:700;color:' + (up ? 'var(--red)' : 'var(--green)') + ';text-transform:uppercase;letter-spacing:.6px">Rate Change</span><span style="font-size:9px;color:var(--dimmer)">' + ev.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + '</span></div>' +
         '<div style="font-size:12px;font-weight:700;margin-bottom:3px">' + esc(ev.d.name) + '</div>' +
-        '<div style="font-size:11px;color:var(--dim)">' + ev.d.apr + '% → <strong style="color:' + (up ? 'var(--red)' : 'var(--green)') + '">' + ev.newApr + '%</strong> ' + (up ? '↑ — pay this one down before the jump if you can' : '↓') + '</div></div></div>';
+        '<div style="font-size:11px;color:var(--dim)">' + prevApr + '% → <strong style="color:' + (up ? 'var(--red)' : 'var(--green)') + '">' + ev.newApr + '%</strong> ' + (up ? '↑ — pay this one down before the jump if you can' : '↓') + '</div></div></div>';
     } else if (ev.kind === 'breakdown') {
       html += '<div class="tl-ev"><div class="tl-dot" style="background:var(--red);box-shadow:0 0 6px rgba(255,107,107,.5)"></div><div style="flex:1">' +
         '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:9px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.6px">Plan Breaks Down</span><span style="font-size:9px;color:var(--dimmer)">' + monthStr(ev.month) + '</span></div>' +
@@ -1288,7 +1424,7 @@ function renderBreakdownTable() {
     const cost = d.balance > 0 && info.paidOff ? 1 + info.totalInterest / d.balance : (d.balance > 0 ? Infinity : 1);
     const tr = document.createElement('tr');
     tr.innerHTML = '<td class="tc-name"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (d.color || '#8899b4') + ';margin-right:6px"></span>' + esc(d.name) + '</td>' +
-      '<td>' + money(d.balance) + '</td><td style="color:var(--red)">' + d.apr + '%</td><td>' + money(d.minPay) + '</td>' +
+      '<td>' + money(d.balance) + '</td><td style="color:var(--red)">' + info.aprNow + '%</td><td>' + (d.payMode === 'pct' ? (d.payPct || 0) + '%≥' + money(d.payFloor || 0) : money(d.minPay)) + '</td>' +
       '<td style="color:var(--yellow)">' + (info.charges > 0 ? '+' + money(info.charges) : '<span style="color:var(--dimmer)">—</span>') + '</td>' +
       '<td style="color:var(--red)">' + (info.paidOff || d.balance <= 0 ? money(Math.round(info.totalInterest)) : '∞') + '</td>' +
       '<td>' + (info.paidOff ? monthStr(info.paidOff) : (d.balance > 0 ? '<span style="color:var(--red)">∞</span>' : '—')) + '</td>' +
@@ -1315,7 +1451,9 @@ function renderAdvisor() {
         'Nothing else matters until this is fixed. Options, in order:<br>' +
         '• Cut expenses by ' + money(C.minShort) + '/mo (see Budget tab — biggest categories first)<br>' +
         (S.savings.monthly > 0 ? '• Pause the ' + money(S.savings.monthly) + '/mo savings contribution temporarily<br>' : '') +
-        (C.m401 > C.mMatch ? '• Trim 401(k) contributions above the employer match<br>' : '') +
+        // only suggest trimming 401(k) dollars that are ABOVE the match cap —
+        // dollars below it earn the instant employer match and should stay
+        (C.m401 > C.matchCapAmt + 0.01 ? '• Trim the ' + money(C.m401 - C.matchCapAmt) + '/mo of 401(k) contributions above the employer match cap (keep the matched part)<br>' : '') +
         '• Call lenders about hardship plans <em>before</em> missing a payment — it protects your credit') + '</div>';
   }
 
@@ -1348,13 +1486,13 @@ function renderAdvisor() {
     html += '<div class="card" style="border-color:rgba(255,107,107,.4)"><div class="card-title" style="color:var(--red)">🚨 Balances Growing Every Month</div>';
     growing.forEach(i => {
       const d = i.d;
-      const deficit = i.needed - d.minPay;
-      const r = d.apr / 100 / 12, n = 60;
+      const deficit = i.needed - i.minNow;
+      const r = i.aprNow / 100 / 12, n = 60;
       const p5 = r > 0 ? Math.ceil(d.balance * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)) : Math.ceil(d.balance / n);
       html += abox('ar', esc(d.name) + ' — grows ' + money(Math.ceil(deficit)) + '/mo', 'var(--red)',
-        'At ' + d.apr + '% APR it accrues <strong>' + money(Math.round(i.monthlyInt)) + '/mo</strong> interest' +
+        'At ' + i.aprNow + '% APR it accrues <strong>' + money(Math.round(i.monthlyInt)) + '/mo</strong> interest' +
         (i.charges > 0 ? ' plus <strong>' + money(i.charges) + '/mo</strong> in new charges' : '') +
-        ', but the payment is only <strong>' + money(d.minPay) + '/mo</strong>.<br>' +
+        ', but the payment is only <strong>' + money(Math.round(i.minNow)) + '/mo</strong>.<br>' +
         '<strong style="color:var(--yellow)">Break even:</strong> ' + money(Math.ceil(i.needed) + 1) + '/mo · <strong style="color:var(--green)">Gone in 5 years:</strong> ' + money(p5 + i.charges) + '/mo' +
         (i.charges > 0 ? '<br><strong>Or:</strong> move its ' + money(i.charges) + '/mo of expenses to cash/checking so the balance stops feeding itself.' : ''));
     });
@@ -1400,10 +1538,10 @@ function renderAdvisor() {
   }
 
   // ── 401k vs debt ─────────────────────────────────────────
-  const highAPR = Math.max(...S.debts.filter(d => d.balance > 0).map(d => d.apr), 0);
+  const highAPR = Math.max(...S.debts.filter(d => d.balance > 0).map(d => effectiveApr(d)), 0);
   const ret = (typeof S.k401.returnPct === 'number') ? S.k401.returnPct : 7;
   html += '<div class="card"><div class="card-title">🏦 401(k) vs. Debt</div>';
-  if (S.k401.on && C.mMatch > 0) html += abox('ag', '✅ Keep capturing the employer match', 'var(--green)', 'Your match is worth <strong>' + money(C.mMatch * 12) + '/yr</strong> — an instant 50–100% return. Never give this up to pay debt faster.');
+  if (S.k401.on && C.mMatch > 0) html += abox('ag', '✅ Keep capturing the employer match', 'var(--green)', 'Your match is worth <strong>' + money(C.mMatch * 12) + '/yr</strong> — an instant ' + S.k401.matchPct + '% return on the matched dollars. Never give this up to pay debt faster.');
   if (highAPR > ret * 1.3) {
     html += abox('ar', 'Debt APR (' + highAPR + '%) beats expected returns (~' + ret + '%)', 'var(--red)', 'Paying down your highest-rate debt is a <strong>guaranteed ' + highAPR + '% return</strong>. ' + (S.k401.on && C.mMatch > 0 ? 'After the match, ' : '') + 'extra dollars do more good on debt than in the market right now.');
   } else if (highAPR > 0 && highAPR < ret * 0.7) {
@@ -1415,9 +1553,11 @@ function renderAdvisor() {
 
   // ── Priority order ───────────────────────────────────────
   html += '<div class="card"><div class="card-title">🎯 Payoff Order (' + (S.strategy === 'avalanche' ? 'Avalanche' : 'Snowball') + ')</div>';
-  if (C.dti > 43) html += abox('ar', '⚠ Debt load is critical: ' + C.dti.toFixed(1) + '% of take-home', 'var(--red)', 'Minimums alone eat ' + C.dti.toFixed(1) + '% of your income. Lenders flag anything over 43%.');
-  else if (C.dti > 28) html += abox('ay', 'Debt load is elevated: ' + C.dti.toFixed(1) + '%', 'var(--yellow)', 'Aim below 28% — each payoff frees breathing room.');
-  const order = S.debts.filter(d => d.balance > 0).sort((a, b) => S.strategy === 'avalanche' ? b.apr - a.apr : a.balance - b.balance);
+  // This is a budgeting-stress ratio (minimums ÷ take-home), NOT lender DTI —
+  // lenders use gross income, count more obligations, and limits vary by product.
+  if (C.dti > 43) html += abox('ar', '⚠ Minimum payments eat ' + C.dti.toFixed(1) + '% of take-home', 'var(--red)', 'Minimums alone consume ' + C.dti.toFixed(1) + '% of your take-home pay — very little room for anything else. (This is a budgeting ratio, not the debt-to-income figure lenders use — that one is based on gross income and all obligations; yours is roughly ' + C.dtiGross.toFixed(0) + '% of gross from these minimums alone.)');
+  else if (C.dti > 28) html += abox('ay', 'Minimum payments take ' + C.dti.toFixed(1) + '% of take-home', 'var(--yellow)', 'That\'s an elevated share of your budget — each payoff frees breathing room. (Budgeting ratio, not lender DTI.)');
+  const order = S.debts.filter(d => d.balance > 0).sort((a, b) => S.strategy === 'avalanche' ? effectiveApr(b) - effectiveApr(a) : a.balance - b.balance);
   const rankColors = ['#00e5b0','#74b9ff','#ffd166','#ff6b6b','#a29bfe','#fd79a8'];
   order.forEach((d, i) => {
     const info = C.debtInfo.find(x => x.d.id === d.id);
@@ -1425,9 +1565,9 @@ function renderAdvisor() {
     html += '<div class="pc"><div class="pc-num" style="background:rgba(0,0,0,.3);border:2px solid ' + nc + ';color:' + nc + '">' + (i + 1) + '</div><div class="pc-body">' +
       '<div class="pc-name">' + esc(d.name) + ' <span class="badge b-' + d.type + '">' + TYPE_LBL[d.type] + '</span>' + (info.isGrowing ? ' <span style="background:rgba(255,107,107,.2);color:var(--red);font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px">⚠ growing</span>' : '') + '</div>' +
       '<div class="pc-reason">' + (S.strategy === 'avalanche'
-        ? (i === 0 ? '<strong>Highest APR (' + d.apr + '%)</strong> — the most expensive dollar you owe. All extra goes here.' : d.apr + '% APR — next in line once the debts above are gone.')
+        ? (i === 0 ? '<strong>Highest APR (' + info.aprNow + '%)</strong> — the most expensive dollar you owe. All extra goes here.' : info.aprNow + '% APR — next in line once the debts above are gone.')
         : (i === 0 ? '<strong>Smallest balance (' + money(d.balance) + ')</strong> — fastest win, then its payment rolls forward.' : money(d.balance) + ' — after the smaller ones clear.')) + '</div>' +
-      '<div class="pc-stats"><div class="ps">Balance: <strong>' + money(d.balance) + '</strong></div><div class="ps">APR: <strong style="color:var(--red)">' + d.apr + '%</strong></div><div class="ps">Min: <strong>' + money(d.minPay) + '/mo</strong></div><div class="ps">Payoff: <strong style="color:' + (info.paidOff ? 'var(--green)' : 'var(--red)') + '">' + (info.paidOff ? monthStr(info.paidOff) : '∞') + '</strong></div></div>' +
+      '<div class="pc-stats"><div class="ps">Balance: <strong>' + money(d.balance) + '</strong></div><div class="ps">APR: <strong style="color:var(--red)">' + info.aprNow + '%</strong></div><div class="ps">Min: <strong>' + money(Math.round(info.minNow)) + '/mo</strong></div><div class="ps">Payoff: <strong style="color:' + (info.paidOff ? 'var(--green)' : 'var(--red)') + '">' + (info.paidOff ? monthStr(info.paidOff) : '∞') + '</strong></div></div>' +
       '</div></div>';
   });
   html += '</div>';
@@ -1450,28 +1590,74 @@ function renderAdvisor() {
 // RENDER: CONSOLIDATE TAB
 // ============================================================
 let consolChart = null;
+let consolSelIds = null; // null = default selection (cards + "other" with a balance)
+function consolSelection() {
+  const eligible = S.debts.filter(d => d.balance > 0);
+  if (consolSelIds === null) return eligible.filter(d => d.type === 'credit' || d.type === 'other').map(d => d.id);
+  const valid = new Set(eligible.map(d => d.id));
+  return consolSelIds.filter(id => valid.has(id));
+}
 function renderConsolidate() {
   const C = CALC;
   const scen = $('consolScenarios');
   if (!S.debts.length || C.totalDebt <= 0) {
+    $('consolDebts').innerHTML = '';
     scen.innerHTML = '<div class="empty"><div class="empty-ico">📊</div>Add debts to compare consolidation options.</div>';
     $('consolCompareCard').style.display = 'none';
     if (consolChart) { consolChart.destroy(); consolChart = null; }
     return;
   }
+
+  // Debt picker — only what's selected gets rolled into the loan
+  const sel = consolSelection();
+  const selSet = new Set(sel);
+  let pills = '';
+  S.debts.filter(d => d.balance > 0).forEach(d => {
+    pills += '<div class="pill' + (selSet.has(d.id) ? ' on' : '') + '" data-consol="' + esc(d.id) + '">' + esc(d.name) + ' · ' + money(d.balance) + '</div>';
+  });
+  $('consolDebts').innerHTML = pills;
+  if (!sel.length) {
+    scen.innerHTML = '<div class="empty"><div class="empty-ico">🔀</div>Select at least one debt above to compare.</div>';
+    $('consolCompareCard').style.display = 'none';
+    if (consolChart) { consolChart.destroy(); consolChart = null; }
+    return;
+  }
+
+  const selDebts = S.debts.filter(d => selSet.has(d.id));
+  const baseBal = selDebts.reduce((s, d) => s + d.balance, 0);
+  const feePct = num('consolFee');
+  const principal = baseBal * (1 + feePct / 100);
+  const selMins = C.debtInfo.filter(i => selSet.has(i.d.id)).reduce((s, i) => s + i.minNow, 0);
+  const selCharges = selDebts.reduce((s, d) => s + (C.chargesByDebt[d.id] || 0), 0);
+
   const minAPR = num('consolMin'), maxAPR = Math.max(num('consolMax'), minAPR);
   const userPay = num('consolPay');
-  const pay = userPay > 0 ? userPay : C.totalMin;
   const term = parseInt($('consolTerm').value) || 0;
   const N = 6, stepSz = (maxAPR - minAPR) / Math.max(N - 1, 1);
   const scenarios = [];
   for (let i = 0; i < N; i++) {
     const apr = +(minAPR + stepSz * i).toFixed(2);
-    scenarios.push({ apr, ...simConsolidated(C.totalDebt, apr, pay, term) });
+    // Payment: user's number, else the contractual payment for the term,
+    // else the selected debts' current minimums (open-ended).
+    const reqPay = term > 0 ? requiredPayment(principal, apr, term) : null;
+    const pay = userPay > 0 ? userPay : Math.ceil(reqPay !== null ? reqPay : selMins);
+    const loan = simConsolidated(principal, apr, pay, term);
+    // Whole-plan simulation: selected debts replaced by the loan, everything
+    // else identical. Minimums freed by the swap are redirected into extra so
+    // both plans spend the same each month; if the loan payment exceeds
+    // today's outlay, that overage is flagged instead of hidden.
+    const consolDebt = { id: 'consol-loan', name: 'Consolidated Loan', type: 'other', balance: principal, apr, minPay: pay, color: '#74b9ff', rateChanges: [] };
+    const scenDebts = S.debts.map(d => selSet.has(d.id) ? Object.assign({}, d, { balance: 0 }) : d).concat([consolDebt]);
+    const extraDelta = S.extra + selMins - pay;
+    const plan = simulate({ debts: scenDebts, extra: Math.max(0, extraDelta) });
+    scenarios.push({ apr, pay, reqPay, loan, plan, moreOutlay: Math.max(0, -extraDelta),
+                     paidOff: loan.paidOff && plan.allPaid, months: loan.months, totalInterest: loan.totalInterest });
   }
+  // "Savings" is only a real number when BOTH plans repay every debt
+  const comparable = C.sim.allPaid;
   const valid = scenarios.filter(s => s.paidOff);
-  const best = valid.length ? valid.reduce((a, b) => a.totalInterest < b.totalInterest ? a : b) : null;
-  const worst = valid.length ? valid.reduce((a, b) => a.totalInterest > b.totalInterest ? a : b) : null;
+  const best = valid.length && comparable ? valid.reduce((a, b) => a.plan.totalInterest < b.plan.totalInterest ? a : b) : null;
+  const worst = valid.length && comparable ? valid.reduce((a, b) => a.plan.totalInterest > b.plan.totalInterest ? a : b) : null;
 
   if (consolChart) { consolChart.destroy(); consolChart = null; }
   if (typeof Chart === 'undefined') chartFallback('consolChart'); else consolChart = new Chart($('consolChart').getContext('2d'), {
@@ -1479,10 +1665,10 @@ function renderConsolidate() {
     data: {
       labels: scenarios.map(s => s.apr + '%'),
       datasets: [
-        { label: 'Total Interest', data: scenarios.map(s => s.paidOff ? Math.round(s.totalInterest) : null),
+        { label: 'Loan Interest', data: scenarios.map(s => s.loan.paidOff ? Math.round(s.loan.totalInterest) : null),
           backgroundColor: scenarios.map(s => s === best ? 'rgba(0,229,176,.5)' : s === worst ? 'rgba(255,107,107,.5)' : 'rgba(116,185,255,.28)'),
           borderColor: scenarios.map(s => s === best ? '#00e5b0' : s === worst ? '#ff6b6b' : '#74b9ff'), borderWidth: 1, yAxisID: 'y' },
-        { label: 'Months', data: scenarios.map(s => s.paidOff ? s.months : null), type: 'line',
+        { label: 'Loan Months', data: scenarios.map(s => s.loan.paidOff ? s.loan.months : null), type: 'line',
           borderColor: '#ffd166', backgroundColor: 'transparent', pointRadius: 4, pointBackgroundColor: '#ffd166', borderWidth: 2, yAxisID: 'y2' }
       ]
     },
@@ -1491,7 +1677,7 @@ function renderConsolidate() {
       plugins: {
         legend: { labels: { color: '#c8d6e8', font: { size: 10 } } },
         tooltip: { backgroundColor: 'rgba(17,24,39,.97)', borderColor: '#2a3a55', borderWidth: 1, titleColor: '#e8edf5', bodyColor: '#c8d6e8',
-          callbacks: { label: ctx => ctx.dataset.label === 'Total Interest' ? ' Interest: ' + money(ctx.raw || 0) : ' Months: ' + (ctx.raw || 'N/A') } }
+          callbacks: { label: ctx => ctx.dataset.label === 'Loan Interest' ? ' Interest: ' + money(ctx.raw || 0) : ' Months: ' + (ctx.raw || 'N/A') } }
       },
       scales: {
         x: { grid: { color: 'rgba(42,58,85,.4)' }, ticks: { color: '#8899b4', font: { size: 10 } } },
@@ -1503,27 +1689,38 @@ function renderConsolidate() {
 
   scen.innerHTML = '';
   scenarios.forEach(s => {
-    const isBest = s === best, isWorst = s === worst && s.paidOff;
-    const saved = C.sim.totalInterest - s.totalInterest;
-    const faster = C.sim.allPaidMonth && s.months ? C.sim.allPaidMonth - s.months : null;
-    const hint = !s.paidOff ? (s.months === null ? 'Payment Too Low' : 'Needs Longer Term') : s.apr <= 5 ? 'Promo / Transfer' : s.apr <= 12 ? 'Excellent Credit' : s.apr <= 20 ? 'Good Credit' : 'Fair Credit';
+    const isBest = s === best, isWorst = s === worst && worst !== best && s.paidOff;
+    // Plan-level savings: only claimed when both plans repay every debt
+    const canCompare = comparable && s.paidOff;
+    const saved = canCompare ? C.sim.totalInterest - s.plan.totalInterest : null;
+    const faster = canCompare && C.sim.allPaidMonth && s.plan.allPaidMonth ? C.sim.allPaidMonth - s.plan.allPaidMonth : null;
+    const hint = !s.loan.paidOff ? (s.loan.months === null ? 'Payment Too Low' : 'Needs Longer Term') : s.apr <= 5 ? 'Promo / Transfer' : s.apr <= 12 ? 'Excellent Credit' : s.apr <= 20 ? 'Good Credit' : 'Fair Credit';
     const div = document.createElement('div');
     div.className = 'cs' + (isBest ? ' best' : isWorst ? ' worst' : '');
     div.innerHTML = '<div class="cs-head"><div><div class="cs-apr" style="color:' + (isBest ? 'var(--green)' : isWorst ? 'var(--red)' : 'var(--text)') + '">' + s.apr + '% APR</div>' +
       '<span class="cs-badge ' + (isBest ? 'cs-best' : isWorst ? 'cs-worst' : 'cs-neutral') + '">' + (isBest ? 'Best' : isWorst ? 'Most Expensive' : hint) + '</span></div>' +
-      '<div style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700">' + money(pay) + '/mo</div></div>' +
+      '<div style="text-align:right"><div style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700">' + money(s.pay) + '/mo</div>' +
+      (s.moreOutlay > 0 ? '<div style="font-size:9px;color:var(--red)">+' + money(s.moreOutlay) + '/mo more than today</div>' : '') + '</div></div>' +
       '<div class="cs-metrics">' +
-      '<div class="cs-m"><div class="cs-mv c-red">' + (s.paidOff ? money(s.totalInterest) : '∞') + '</div><div class="cs-ml">Total Interest</div></div>' +
-      '<div class="cs-m"><div class="cs-mv" style="font-size:9px;color:' + (s.paidOff ? 'var(--text)' : 'var(--red)') + '">' + (s.paidOff ? monthStr(s.months) + ' (' + Math.ceil(s.months / 12) + 'yr)' : (s.months === null ? 'Payment too low' : 'Not within term')) + '</div><div class="cs-ml">Payoff</div></div>' +
-      '<div class="cs-m"><div class="cs-mv" style="color:' + (saved > 0 ? 'var(--green)' : 'var(--red)') + '">' + (s.paidOff ? money(Math.abs(saved)) : '—') + '</div><div class="cs-ml">' + (saved >= 0 ? 'Saved' : 'Extra Cost') + '</div></div></div>' +
-      (faster !== null && s.paidOff ? '<div style="margin-top:7px;font-size:10px;color:' + (faster > 0 ? 'var(--green)' : faster < 0 ? 'var(--red)' : 'var(--dim)') + '">' + (faster > 0 ? '⚡ ' + faster + ' months faster than your plan' : faster < 0 ? '⚠ ' + (-faster) + ' months slower than your plan' : '⚖ Same timeline') + '</div>' : '');
+      '<div class="cs-m"><div class="cs-mv c-red">' + (s.loan.paidOff ? money(s.loan.totalInterest) : '∞') + '</div><div class="cs-ml">Loan Interest</div></div>' +
+      '<div class="cs-m"><div class="cs-mv" style="font-size:9px;color:' + (s.loan.paidOff ? 'var(--text)' : 'var(--red)') + '">' + (s.loan.paidOff ? monthStr(s.loan.months) + ' (' + Math.ceil(s.loan.months / 12) + 'yr)' : (s.loan.months === null ? 'Payment too low' : 'Not within term')) + '</div><div class="cs-ml">Loan Paid</div></div>' +
+      '<div class="cs-m"><div class="cs-mv" style="color:' + (saved === null ? 'var(--dimmer)' : saved >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (saved !== null ? money(Math.abs(saved)) : '—') + '</div><div class="cs-ml">' + (saved !== null && saved < 0 ? 'Plan Extra Cost' : 'Plan Savings') + '</div></div></div>' +
+      (faster !== null ? '<div style="margin-top:7px;font-size:10px;color:' + (faster > 0 ? 'var(--green)' : faster < 0 ? 'var(--red)' : 'var(--dim)') + '">' + (faster > 0 ? '⚡ Debt-free ' + faster + ' months sooner than your plan' : faster < 0 ? '⚠ Debt-free ' + (-faster) + ' months later than your plan' : '⚖ Same debt-free date') + '</div>' : '') +
+      (!comparable && s.loan.paidOff ? '<div style="margin-top:7px;font-size:10px;color:var(--dimmer)">Savings not comparable — your current plan never finishes, so its interest total would be understated.</div>' : '');
     scen.appendChild(div);
   });
 
   $('consolCompareCard').style.display = '';
-  const bestBox = best ? abox('ag', '🏆 Best tested: ' + best.apr + '% APR', 'var(--green)', '<strong>Interest:</strong> ' + money(best.totalInterest) + '<br><strong>Payoff:</strong> ' + monthStr(best.months) + '<br><strong>Saves:</strong> <span style="color:var(--green)">' + money(C.sim.totalInterest - best.totalInterest) + '</span> vs. current plan') : '';
+  const feeAmt = principal - baseBal;
+  const bestBox = best ? abox('ag', '🏆 Best tested: ' + best.apr + '% APR', 'var(--green)', '<strong>Whole-plan interest:</strong> ' + money(best.plan.totalInterest) + '<br><strong>Debt-free:</strong> ' + monthStr(best.plan.allPaidMonth) + '<br><strong>Saves:</strong> <span style="color:var(--green)">' + money(C.sim.totalInterest - best.plan.totalInterest) + '</span> vs. current plan' + (best.moreOutlay > 0 ? '<br><strong style="color:var(--red)">Needs ' + money(best.moreOutlay) + '/mo more than you pay today</strong>' : ' at the same monthly outlay')) :
+    abox('ay', '— No comparable scenario', 'var(--yellow)', comparable ? 'No tested APR/payment combination repays the loan. Raise the payment or lengthen the term.' : 'Your current plan never finishes within 50 years, so "savings" can\'t be stated honestly — a consolidation that repays everything is compared against a plan that doesn\'t. Fix the current plan\'s gap first, or read the per-scenario loan numbers on their own.');
   $('consolCompare').innerHTML = '<div class="g2" style="margin-bottom:10px">' +
-    abox('ab', '📊 Your Current Plan', 'var(--blue)', '<strong>Interest:</strong> ' + money(C.sim.totalInterest) + '<br><strong>Payoff:</strong> ' + (C.sim.allPaidMonth ? monthStr(C.sim.allPaidMonth) : 'not on track') + '<br><strong>Paying:</strong> ' + money(C.totalMin + S.extra) + '/mo') + bestBox + '</div>' +
+    abox('ab', '📊 Your Current Plan', 'var(--blue)', '<strong>Whole-plan interest:</strong> ' + (C.sim.allPaid ? money(C.sim.totalInterest) : '∞ (never finishes)') + '<br><strong>Debt-free:</strong> ' + (C.sim.allPaidMonth ? monthStr(C.sim.allPaidMonth) : 'not on track') + '<br><strong>Paying:</strong> ' + money(C.totalMin + S.extra) + '/mo') + bestBox + '</div>' +
+    abox('ab', 'ℹ How this comparison works', 'var(--blue)',
+      '• Both sides repay the <strong>same debts</strong> — only the ' + sel.length + ' selected debt' + (sel.length > 1 ? 's are' : ' is') + ' rolled into the loan' + (feeAmt > 0 ? ', with the ' + feePct + '% fee (' + money(Math.round(feeAmt)) + ') added to the loan balance' : '') + '<br>' +
+      '• Monthly outlay is held equal: minimums freed by the swap go to extra debt payments<br>' +
+      (selCharges > 0 ? '• The ' + money(selCharges) + '/mo you charge to the consolidated cards is assumed paid in full from cash after the swap — keep charging without paying and the savings evaporate<br>' : '') +
+      '• Interest and dates are whole-plan numbers (all debts, income, and expenses), not loan-only') +
     abox('ay', '⚠ Before you consolidate', 'var(--yellow)',
       '• Balance transfers: 0% promos run 12–21 months but charge a 3–5% fee up front, then jump to 20–30%<br>' +
       '• Home equity puts your house on the line for unsecured card debt<br>' +
@@ -1563,12 +1760,21 @@ function openDebtModal(id) {
   $('dBalance').value = d ? d.balance : '';
   $('dAPR').value = d ? d.apr : '';
   $('dMinPay').value = d ? d.minPay : '';
+  $('dPayMode').value = d && d.payMode === 'pct' ? 'pct' : 'fixed';
+  $('dPayPct').value = d && d.payPct ? d.payPct : '';
+  $('dPayFloor').value = d && d.payFloor ? d.payFloor : '';
+  syncPayModeFields();
   $('dColor').value = d ? (d.color || '#ff6b6b') : COLORS[S.debts.length % COLORS.length];
   $('rateChangeList').innerHTML = '';
   if (d) (d.rateChanges || []).forEach(c => addRateChangeRow(c.date, c.apr));
   $('debtModal').classList.add('open');
 }
 function closeDebtModal() { $('debtModal').classList.remove('open'); }
+function syncPayModeFields() {
+  const pct = $('dPayMode').value === 'pct';
+  $('dMinPayFld').style.display = pct ? 'none' : '';
+  $('dPctFlds').style.display = pct ? '' : 'none';
+}
 function addRateChangeRow(date, apr) {
   const row = document.createElement('div');
   row.className = 'rate-row';
@@ -1584,10 +1790,10 @@ function saveDebt() {
   const rateChanges = [];
   document.querySelectorAll('#rateChangeList .rate-row').forEach(r => {
     const date = r.querySelector('.rc-date').value;
-    const apr = parseFloat(r.querySelector('.rc-apr').value) || 0;
+    const apr = clampNum(r.querySelector('.rc-apr').value, 0, 200);
     if (date) rateChanges.push({ date, apr });
   });
-  rateChanges.sort((a, b) => new Date(a.date) - new Date(b.date));
+  rateChanges.sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
   const debt = {
     id: editingDebtId || genId(),
     name: $('dName').value.trim() || 'Unnamed',
@@ -1595,6 +1801,9 @@ function saveDebt() {
     balance: num('dBalance'),
     apr: num('dAPR'),
     minPay: num('dMinPay'),
+    payMode: $('dPayMode').value === 'pct' ? 'pct' : 'fixed',
+    payPct: num('dPayPct'),
+    payFloor: num('dPayFloor'),
     color: $('dColor').value,
     rateChanges
   };
@@ -1632,8 +1841,9 @@ function openExpModal(id) {
   // paid-with options
   let opts = '<option value="cash">Cash / Checking (no debt impact)</option>';
   S.debts.filter(d => d.type === 'credit').forEach(d => {
-    const hi = d.apr >= 20 && d.balance > 0;
-    opts += '<option value="' + d.id + '"' + (exp && exp.paidWith === d.id ? ' selected' : '') + '>' + (hi ? '⚠ ' : '') + esc(d.name) + ' (' + d.apr + '% APR)</option>';
+    const apr = effectiveApr(d);
+    const hi = apr >= 20 && d.balance > 0;
+    opts += '<option value="' + esc(d.id) + '"' + (exp && exp.paidWith === d.id ? ' selected' : '') + '>' + (hi ? '⚠ ' : '') + esc(d.name) + ' (' + apr + '% APR)</option>';
   });
   $('ePaidWith').innerHTML = opts;
   if (exp && (!exp.paidWith || exp.paidWith === 'cash')) $('ePaidWith').value = 'cash';
@@ -1699,32 +1909,54 @@ function normalize() {
   S.savings = { balance: numOr(sv.balance, 0, 0, MAXV), monthly: numOr(sv.monthly, 0, 0, MAXV),
                 efMonths: numOr(sv.efMonths, def.savings.efMonths, 1, 120) };
   const colorOk = c => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+  // IDs are interpolated into HTML attributes, so imported JSON must never
+  // smuggle markup through them: restrict to a safe charset, dedupe, and
+  // remap expense paidWith references that pointed at a replaced id.
+  const idOk = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v);
+  const usedDebtIds = new Set();
+  const idRemap = Object.create(null);
   S.debts = (Array.isArray(S.debts) ? S.debts : [])
     .filter(d => d && typeof d === 'object')
-    .map((d, i) => ({
-      id: String(d.id || genId()),
-      name: String(d.name || 'Unnamed'),
-      type: TYPE_LBL[d.type] ? d.type : 'other',
-      balance: numOr(d.balance, 0, 0, MAXV),
-      apr: numOr(d.apr, 0, 0, 999),
-      minPay: numOr(d.minPay, 0, 0, MAXV),
-      color: colorOk(d.color) ? d.color : COLORS[i % COLORS.length],
-      rateChanges: (Array.isArray(d.rateChanges) ? d.rateChanges : [])
-        .filter(c => c && typeof c === 'object' && c.date && !isNaN(new Date(c.date).getTime()))
-        .map(c => ({ date: String(c.date), apr: numOr(c.apr, 0, 0, 999) }))
-    }));
-  const debtIds = {};
-  S.debts.forEach(d => { debtIds[d.id] = true; });
+    .map((d, i) => {
+      let id = (typeof d.id === 'string' || typeof d.id === 'number') ? String(d.id) : '';
+      if (!idOk(id)) { const nid = genId(); if (id) idRemap[id] = nid; id = nid; }
+      else if (usedDebtIds.has(id)) id = genId(); // duplicate: first keeps it, refs follow the first
+      usedDebtIds.add(id);
+      return {
+        id,
+        name: String(d.name || 'Unnamed'),
+        type: TYPE_LBL[d.type] ? d.type : 'other',
+        balance: numOr(d.balance, 0, 0, MAXV),
+        apr: numOr(d.apr, 0, 0, 999),
+        minPay: numOr(d.minPay, 0, 0, MAXV),
+        payMode: d.payMode === 'pct' ? 'pct' : 'fixed',
+        payPct: numOr(d.payPct, 0, 0, 100),
+        payFloor: numOr(d.payFloor, 0, 0, MAXV),
+        color: colorOk(d.color) ? d.color : COLORS[i % COLORS.length],
+        rateChanges: (Array.isArray(d.rateChanges) ? d.rateChanges : [])
+          .filter(c => c && typeof c === 'object' && c.date && !isNaN(parseLocalDate(c.date).getTime()))
+          .map(c => ({ date: String(c.date), apr: numOr(c.apr, 0, 0, 999) }))
+      };
+    });
+  const debtIds = new Set(S.debts.map(d => d.id));
+  const usedExpIds = new Set();
   S.expenses = (Array.isArray(S.expenses) ? S.expenses : [])
     .filter(e => e && typeof e === 'object')
-    .map(e => ({
-      id: String(e.id || genId()),
-      cat: EXP_CATS.some(c => c.key === e.cat) ? e.cat : 'other',
-      name: String(e.name || 'Expense'),
-      amount: numOr(e.amount, 0, 0, MAXV),
-      // an expense pointing at a deleted/unknown card would silently vanish from the math — route to cash
-      paidWith: (e.paidWith && e.paidWith !== 'cash' && debtIds[String(e.paidWith)]) ? String(e.paidWith) : 'cash'
-    }));
+    .map(e => {
+      let id = (typeof e.id === 'string' || typeof e.id === 'number') ? String(e.id) : '';
+      if (!idOk(id) || usedExpIds.has(id)) id = genId();
+      usedExpIds.add(id);
+      let pw = (typeof e.paidWith === 'string' || typeof e.paidWith === 'number') ? String(e.paidWith) : 'cash';
+      if (idRemap[pw]) pw = idRemap[pw];
+      return {
+        id,
+        cat: EXP_CATS.some(c => c.key === e.cat) ? e.cat : 'other',
+        name: String(e.name || 'Expense'),
+        amount: numOr(e.amount, 0, 0, MAXV),
+        // an expense pointing at a deleted/unknown card would silently vanish from the math — route to cash
+        paidWith: (pw && pw !== 'cash' && debtIds.has(pw)) ? pw : 'cash'
+      };
+    });
 }
 function migrateOld(o) {
   const n = defaultState();
@@ -1889,6 +2121,7 @@ function wire() {
   $('debtModalClose').addEventListener('click', closeDebtModal);
   $('cancelDebtBtn').addEventListener('click', closeDebtModal);
   $('saveDebtBtn').addEventListener('click', saveDebt);
+  $('dPayMode').addEventListener('change', syncPayModeFields);
   $('debtModal').addEventListener('click', e => { if (e.target === $('debtModal')) closeDebtModal(); });
   $('addRateChangeBtn').addEventListener('click', () => addRateChangeRow('', ''));
 
@@ -1920,9 +2153,16 @@ function wire() {
   $('extraSlider').addEventListener('dblclick', () => { $('extraSlider').value = 0; S.extra = 0; $('extraPay').value = ''; save(); refresh(); });
 
   // Consolidation controls
-  ['consolPay', 'consolTerm', 'consolMin', 'consolMax'].forEach(id => {
+  ['consolPay', 'consolTerm', 'consolMin', 'consolMax', 'consolFee'].forEach(id => {
     $(id).addEventListener('input', () => { if (activeTab === 'consolidate') renderConsolidate(); });
     $(id).addEventListener('change', () => { if (activeTab === 'consolidate') renderConsolidate(); });
+  });
+  $('consolDebts').addEventListener('click', e => {
+    const p = e.target.closest('[data-consol]'); if (!p) return;
+    const cur = consolSelection();
+    const id = p.dataset.consol;
+    consolSelIds = cur.includes(id) ? cur.filter(x => x !== id) : cur.concat([id]);
+    renderConsolidate();
   });
 
   // Escape closes modals
