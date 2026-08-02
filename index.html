@@ -873,6 +873,11 @@ function calculate() {
   // the ones charged to cards. freeCash alone can look green while the
   // household finances groceries on a card every month.
   const sustainable = freeCash - cardExp;
+  // ...and before the VOLUNTARY extra payment: if this is negative the
+  // household is borrowing for living expenses no matter how the extra is
+  // routed. If only `sustainable` is negative, card charges are merely
+  // offsetting part of the extra payment (net debt still falls).
+  const sustainableBase = budget - totalMin - cardExp;
   const minShort = Math.max(0, totalMin - budget);  // can't even cover minimums
 
   const trueCost = totalDebt > 0 ? (sim.allPaid ? 1 + sim.totalInterest / totalDebt : Infinity) : 1;
@@ -901,7 +906,7 @@ function calculate() {
   });
 
   CALC = { net, gross, m401, mMatch, matchCapAmt, totalDebt, totalMin, cashExp, cardExp, totalExp,
-           sim, budget, freeCash, sustainable, minShort, trueCost, dti, dtiGross, debtInfo, chargesByDebt };
+           sim, budget, freeCash, sustainable, sustainableBase, minShort, trueCost, dti, dtiGross, debtInfo, chargesByDebt };
   return CALC;
 }
 
@@ -962,11 +967,16 @@ function renderSummary() {
     leftEl.className = 'sum-big c-yellow'; leftEl.style.color = '';
     leftEl.textContent = money(Math.abs(C.freeCash));
     lblEl.textContent = '⚠ Extra Payment Too Big'; subEl.textContent = 'reduce extra by this much to balance';
-  } else if (C.sustainable < 0) {
+  } else if (C.sustainableBase < 0) {
     leftEl.className = 'sum-big c-red'; leftEl.style.color = '';
-    leftEl.textContent = money(Math.abs(C.sustainable));
+    leftEl.textContent = money(Math.abs(C.sustainableBase));
     lblEl.textContent = '⚠ Borrowing To Live';
-    subEl.textContent = 'expenses exceed cash by this much — the gap is charged to cards each month';
+    subEl.textContent = 'living expenses exceed cash by this much even with zero extra payment — the gap goes on cards every month';
+  } else if (C.sustainable < 0) {
+    leftEl.className = 'sum-big c-yellow'; leftEl.style.color = '';
+    leftEl.textContent = money(C.freeCash);
+    lblEl.textContent = 'Left Over (cash)';
+    subEl.textContent = '⚠ but ' + money(C.cardExp) + '/mo goes on cards — ' + money(C.cardExp - C.freeCash) + ' of your extra payment is offset by new charges';
   } else {
     leftEl.className = 'sum-big c-green'; leftEl.style.color = '';
     leftEl.textContent = money(C.sustainable);
@@ -1191,7 +1201,8 @@ function renderBudget() {
   }
 
   if (C.freeCash < 0) html += abox('ar', '⚠ Monthly Shortfall: ' + money(Math.abs(C.freeCash)), 'var(--red)', 'Expenses, minimums, savings, and extra payment exceed take-home by <strong>' + money(Math.abs(C.freeCash)) + '/mo</strong>. Lower the extra payment or trim expenses.');
-  else if (C.sustainable < 0) html += abox('ar', '⚠ Borrowing ' + money(Math.abs(C.sustainable)) + '/mo for living expenses', 'var(--red)', 'Cash covers the bills paid from checking, but <strong>' + money(C.cardExp) + '/mo</strong> of expenses go on cards and only <strong>' + money(C.freeCash) + '/mo</strong> of cash is left to absorb them. The difference — <strong>' + money(Math.abs(C.sustainable)) + '/mo</strong> — is new debt every month. Move expenses to cash or cut them until this turns positive.');
+  else if (C.sustainableBase < 0) html += abox('ar', '⚠ Borrowing ' + money(Math.abs(C.sustainableBase)) + '/mo for living expenses', 'var(--red)', 'Even with zero extra payment, cash after minimums covers only part of your spending: <strong>' + money(C.cardExp) + '/mo</strong> goes on cards but only <strong>' + money(Math.max(0, C.budget - C.totalMin)) + '/mo</strong> of cash could absorb it. The difference — <strong>' + money(Math.abs(C.sustainableBase)) + '/mo</strong> — is new debt every month. Move expenses to cash or cut them until this turns positive.');
+  else if (C.sustainable < 0) html += abox('ay', '⚠ Card charges offset ' + money(C.cardExp - C.freeCash) + '/mo of your extra payment', 'var(--yellow)', 'You pay <strong>' + money(S.extra) + '/mo</strong> extra toward debt, but <strong>' + money(C.cardExp) + '/mo</strong> of expenses land on cards and only ' + money(C.freeCash) + '/mo of cash is left over. Net new paydown is about <strong>' + money(S.extra - (C.cardExp - C.freeCash)) + '/mo</strong>. Moving card expenses to cash/checking makes the real progress match the plan.');
   else if (C.sustainable < 200) html += abox('ay', '⚡ Tight: only ' + money(C.sustainable) + ' truly free', 'var(--yellow)', 'After every expense (including the ' + (C.cardExp > 0 ? money(C.cardExp) + '/mo charged to cards' : 'card charges') + '), one surprise bill could push you into deficit. Consider leaving a little more slack.');
   else html += abox('ag', '✅ ' + money(C.sustainable) + '/mo truly free', 'var(--green)', 'That\'s what remains after ALL living expenses' + (C.cardExp > 0 ? ' — including the ' + money(C.cardExp) + '/mo charged to cards' : '') + ', minimums, savings, and extra. You could put some of it toward the extra debt payment — every $100/mo meaningfully moves your debt-free date. Check the Projection slider.');
   el.innerHTML = html;

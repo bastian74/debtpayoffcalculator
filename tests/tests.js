@@ -403,6 +403,14 @@ var __TEST_RESULTS = [];
     close(C.freeCash, 7900, 0.001, 'cash surplus ignores card charges');
     close(C.cardExp, 500, 0.001, 'card expenses tracked');
     close(C.sustainable, 7400, 0.001, 'sustainable = cash surplus - card-financed spending');
+    close(C.sustainableBase, 7400, 0.001, 'base equals sustainable when extra=0');
+    // extra payment reduces `sustainable` but not `sustainableBase` — the base
+    // decides whether the household is genuinely borrowing to live
+    S.extra = 300;
+    C = calculate();
+    close(C.freeCash, 7600, 0.001, 'extra reduces cash surplus');
+    close(C.sustainable, 7100, 0.001, 'extra reduces sustainable');
+    close(C.sustainableBase, 7400, 0.001, 'base unaffected by voluntary extra');
   });
 
   // ---- T30: 401(k) advice compares against the match CAP, not match dollars ----
