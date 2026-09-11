@@ -4,6 +4,36 @@ One self-contained `index.html` (HTML/CSS/JS inline), offline, localStorage-back
 snowball payoff simulation, savings drawdown, promo-rate handling, projection + consolidation
 tabs (Chart.js).
 
+## Durability: never lose work to a token cutoff
+
+**Standing rule from Eric, 2026-09-11: "Be sure agents don't lose their work if they run out
+of tokens. This should always be true everywhere, every project. Make things as non-volatile
+as possible using c:\claude\ for scratch pad access if needed."**
+
+DURABILITY: NEVER LOSE WORK — for any agent or workflow working in this repo:
+
+- **Write findings down as you form them, not at the end.** Append each finding as one JSON
+  line to `C:\Claude\_scratch\agent-work\DebtPayoffCalculator\<date>-<topic>\journal\<yourname>.jsonl`
+  the moment you have it, before looking for the next. Your structured return value is then a
+  second copy rather than the only one. This is not busywork: two review runs on another
+  project died on a usage limit after ~2.7M tokens of reading and left nothing behind,
+  because every agent was holding its results to report at the end.
+- **If you are editing code, the repo is already durable** — but append a one-line note per
+  completed sub-task to that journal, so an agent killed mid-batch leaves a trail of what it
+  changed and what it was about to do. Afterwards `git diff` is ground truth; the journal
+  supplies the intent.
+- **Keep artifacts under `C:\Claude`, never `%TEMP%`.** The session scratchpad under
+  `%TEMP%\claude\...` is volatile and has already lost probe sources between sessions.
+  Durable home is `C:\Claude\_scratch\agent-work\<project>\<date>-<topic>\` with
+  `baseline/ regress/ reports/ probes/ journal/`; see the README there. DevClean reclaims
+  `bin`/`obj`/`build`/`.gradle` and named data dirs only, so sources and results survive —
+  build output does not.
+- **Probe and harness SOURCES belong in `C:\Claude\_scratch\agent-work\DebtPayoffCalculator\probes\`.**
+  A probe you cannot re-run next session is a probe you will rewrite.
+- **Prefer many small sequential batches to one long agent**, so a cutoff costs one batch.
+  Workflows are resumable: relaunch with `{scriptPath, resumeFromRunId}` and read the run's
+  `journal.jsonl` before assuming a cached result was non-empty.
+
 ## Critical invariants
 
 - **`index-original.html` is the preserved original — NEVER modify it.** All work goes in
