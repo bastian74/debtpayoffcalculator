@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytvault"
+version = "0.1.0"
+description = "Measure how densely binary data survives YouTube's transcoder, then store files there with Reed-Solomon repair."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+youtube = ["yt-dlp"]
+upload = ["google-api-python-client", "google-auth-oauthlib"]
+test = ["pytest"]
+
+[project.scripts]
+ytvault = "ytvault.cli:main"
+
+[tool.setuptools]
+packages = ["ytvault"]
